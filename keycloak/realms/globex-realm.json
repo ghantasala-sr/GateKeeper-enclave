@@ -1,0 +1,83 @@
+{
+  "realm": "globex",
+  "displayName": "Globex",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "bruteForceProtected": true,
+  "roles": {
+    "realm": [
+      { "name": "employee" },
+      { "name": "hr_manager" },
+      { "name": "admin" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "urn:gatekeeper:globex",
+      "name": "Gatekeeper",
+      "protocol": "saml",
+      "enabled": true,
+      "frontchannelLogout": false,
+      "redirectUris": ["${GATEKEEPER_API_URL}/auth/saml/acs"],
+      "defaultClientScopes": [],
+      "optionalClientScopes": [],
+      "attributes": {
+        "saml_assertion_consumer_url_post": "${GATEKEEPER_API_URL}/auth/saml/acs",
+        "saml.authnstatement": "true",
+        "saml_signature_canonicalization_method": "http://www.w3.org/2001/10/xml-exc-c14n#",
+        "saml.server.signature": "true",
+        "saml.assertion.signature": "true",
+        "saml.signature.algorithm": "RSA_SHA256",
+        "saml.client.signature": "false",
+        "saml.force.post.binding": "true",
+        "saml_force_name_id_format": "true",
+        "saml_name_id_format": "persistent",
+        "saml.encrypt": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "email",
+          "protocol": "saml",
+          "protocolMapper": "saml-user-property-mapper",
+          "consentRequired": false,
+          "config": { "user.attribute": "email", "attribute.name": "email", "attribute.nameformat": "Basic" }
+        },
+        {
+          "name": "role",
+          "protocol": "saml",
+          "protocolMapper": "saml-role-list-mapper",
+          "consentRequired": false,
+          "config": { "single": "true", "attribute.name": "role", "attribute.nameformat": "Basic" }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "0b5b112d-94f5-5a8f-8505-756f73f919d8",
+      "username": "employee@globex.example", "email": "employee@globex.example",
+      "firstName": "Globex", "lastName": "Employee", "enabled": true, "emailVerified": true,
+      "attributes": { "saml.persistent.name.id.for.urn:gatekeeper:globex": ["G-0b5b112d-94f5-5a8f-8505-756f73f919d8"] },
+      "credentials": [{ "type": "password", "value": "${GLOBEX_TEST_PASSWORD}", "temporary": false }],
+      "realmRoles": ["employee"]
+    },
+    {
+      "id": "2ea54d33-fb1d-5d94-a655-70f1854f1c0f",
+      "username": "hr.manager@globex.example", "email": "hr.manager@globex.example",
+      "firstName": "Globex", "lastName": "HR", "enabled": true, "emailVerified": true,
+      "attributes": { "saml.persistent.name.id.for.urn:gatekeeper:globex": ["G-2ea54d33-fb1d-5d94-a655-70f1854f1c0f"] },
+      "credentials": [{ "type": "password", "value": "${GLOBEX_TEST_PASSWORD}", "temporary": false }],
+      "realmRoles": ["hr_manager"]
+    },
+    {
+      "id": "ae558796-5065-539e-a7e0-e82675bd6bed",
+      "username": "admin@globex.example", "email": "admin@globex.example",
+      "firstName": "Globex", "lastName": "Admin", "enabled": true, "emailVerified": true,
+      "attributes": { "saml.persistent.name.id.for.urn:gatekeeper:globex": ["G-ae558796-5065-539e-a7e0-e82675bd6bed"] },
+      "credentials": [{ "type": "password", "value": "${GLOBEX_TEST_PASSWORD}", "temporary": false }],
+      "realmRoles": ["admin"]
+    }
+  ]
+}

@@ -85,6 +85,8 @@ flowchart LR
 .
 ├── gatekeeper/              # the application source only (snapshot of GateKeeper 20615cb + app changes)
 ├── docker/                  # Dockerfiles (+ per-Dockerfile .dockerignore), built with gatekeeper/ as the context
+├── compose/                 # local stand-ins: Postgres with a Cloud SQL-like (non-superuser) owner, the sealed test
+├── keycloak/                # realm imports: acme (OIDC, gk- groups) and globex (SAML); check_logins.py signs in all six
 ├── release.lock.yaml        # the exact GateKeeper release to deploy
 ├── terraform/
 │   ├── modules/             # network, firewall, dns, registry, iam, cloudsql, gke, bastion, vpc-sc, monitoring
@@ -118,7 +120,7 @@ Each claim gets evidence a reviewer can check:
 
 | Milestone | Scope | Status |
 |---|---|---|
-| **Groundwork** (local, kind) | Offline-ready images, model provider interface, Keycloak for both tenants, Kubernetes manifests, NetworkPolicies, Helm chart, Terraform basics | Planned |
+| **Groundwork** (local, kind) | Offline-ready images, model provider interface, Keycloak for both tenants, Kubernetes manifests, NetworkPolicies, Helm chart, Terraform basics | In progress |
 | **Enclave** (GCP) | Sealed VPC, firewall, private DNS, bastion, Artifact Registry, private Cloud SQL, private GKE, offline bundle, zero-egress proof, CI plan check, `DEPLOYMENT.md` | Planned |
 | **Production** (GCP) | High availability, zero-downtime upgrades, backup and restore, observability with SLOs and an egress alert, Secret Manager CSI and key rotation, signed images and Binary Authorization, internal HTTPS Gateway, runbook and game day | Planned |
 

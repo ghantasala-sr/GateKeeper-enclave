@@ -1,0 +1,74 @@
+{
+  "realm": "acme",
+  "displayName": "Acme Corp",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "bruteForceProtected": true,
+  "groups": [
+    { "name": "gk-employee" },
+    { "name": "gk-hr-manager" },
+    { "name": "gk-admin" }
+  ],
+  "clients": [
+    {
+      "clientId": "gatekeeper",
+      "name": "Gatekeeper",
+      "protocol": "openid-connect",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${ACME_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["${GATEKEEPER_API_URL}/auth/okta/callback"],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${GATEKEEPER_FRONTEND_URL}"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "e8ca259f-5b9d-5927-b52c-0faa547f1cc0",
+      "username": "employee@acme.example", "email": "employee@acme.example",
+      "firstName": "Acme", "lastName": "Employee", "enabled": true, "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "${ACME_TEST_PASSWORD}", "temporary": false }],
+      "groups": ["gk-employee"]
+    },
+    {
+      "id": "4fe74c6f-b66e-5268-a039-e67a90d6fefe",
+      "username": "hr.manager@acme.example", "email": "hr.manager@acme.example",
+      "firstName": "Acme", "lastName": "HR", "enabled": true, "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "${ACME_TEST_PASSWORD}", "temporary": false }],
+      "groups": ["gk-hr-manager"]
+    },
+    {
+      "id": "f6026e63-fc64-5269-9d14-ffba5d1e37b7",
+      "username": "admin@acme.example", "email": "admin@acme.example",
+      "firstName": "Acme", "lastName": "Admin", "enabled": true, "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "${ACME_TEST_PASSWORD}", "temporary": false }],
+      "groups": ["gk-admin"]
+    }
+  ]
+}
