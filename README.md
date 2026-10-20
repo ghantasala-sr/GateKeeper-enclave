@@ -69,21 +69,16 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    subgraph Product["GateKeeper (product)"]
-        TAG["release tag v1.x.y"] --> IMG["container images"] & CHART["Helm chart (OCI)"]
-    end
-    subgraph Deployment["gatekeeper-enclave"]
-        LOCK["release.lock.yaml<br/>chart version + image digests"] --> BUNDLE["make-bundle.sh"]
-        BUNDLE --> INSTALL["install-from-bundle.sh<br/>(on the bastion)"]
-        TF["Terraform"] --> ENV["Enclave environment"]
-        INSTALL --> ENV
-    end
-    IMG & CHART -. "pinned by digest" .-> LOCK
+    SRC["gatekeeper/<br/>app source + Dockerfiles"] --> IMG["container images"] & CHART["Helm chart"]
+    IMG & CHART --> LOCK["release.lock.yaml<br/>image digests + chart version"]
+    LOCK --> BUNDLE["make-bundle.sh"] --> INSTALL["install-from-bundle.sh<br/>(on the bastion)"]
+    TF["Terraform"] --> ENV["Enclave environment"]
+    INSTALL --> ENV
 ```
 
-- **GateKeeper** owns everything that versions with the app: code, Dockerfiles, Keycloak realm exports, and the Helm chart. Each release tag publishes one set of images and one chart version.
-- **This repo** owns everything specific to the environment: infrastructure, environment values, packaging, operational docs, and proof.
-- **Upgrading the Enclave is a pull request** that bumps `release.lock.yaml`. Nothing here edits app code, and nothing in GateKeeper knows about this network.
+- **`gatekeeper/`** is the application: a snapshot of [GateKeeper](https://github.com/ghantasala-sr/GateKeeper) at `20615cb`, plus the changes deployment needs (offline-ready images, and later the model-provider interface and Keycloak configuration). Images and the Helm chart are built from it here.
+- **Everything else** is the environment: infrastructure, environment values, packaging, operational docs, and proof.
+- **A release is pinned by digest** in `release.lock.yaml`, and the offline bundle packages exactly those images. Upgrading the Enclave is a reviewed change to that file.
 
 ## Repository layout
 
