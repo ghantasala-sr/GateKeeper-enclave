@@ -16,6 +16,8 @@ from tests.test_saml import signed_response, sp  # noqa: F401 (fixture)
 from tests.test_tokens import acme_user  # noqa: F401 (fixture)
 
 FRONTEND = "http://localhost:3000"
+# CORS is configured once at startup, so it allows FRONTEND_URL as deployed, not the value tests patch in.
+DEPLOYED_FRONTEND = main.settings.frontend_url.rstrip("/")
 
 
 def fragment(resp) -> dict:
@@ -103,8 +105,8 @@ def test_me_returns_badge_info(client, acme_user):  # noqa: F811
 def test_cors_allows_the_frontend_only(client):
     preflight = {"Access-Control-Request-Method": "POST",
                  "Access-Control-Request-Headers": "authorization,content-type"}
-    ok = client.options("/chat", headers={"Origin": FRONTEND, **preflight})
-    assert ok.status_code == 200 and ok.headers["access-control-allow-origin"] == FRONTEND
+    ok = client.options("/chat", headers={"Origin": DEPLOYED_FRONTEND, **preflight})
+    assert ok.status_code == 200 and ok.headers["access-control-allow-origin"] == DEPLOYED_FRONTEND
     assert "access-control-allow-credentials" not in ok.headers
     evil = client.options("/chat", headers={"Origin": "https://evil.example", **preflight})
     assert "access-control-allow-origin" not in evil.headers

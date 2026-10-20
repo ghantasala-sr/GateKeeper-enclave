@@ -1,0 +1,119 @@
+# The sealed test: the whole stack on a Docker network with no route out.
+#
+#   compose/sealed-test.sh          (generates throwaway secrets, runs every check, tears down)
+#
+# `internal: true` gives the network no gateway, so nothing here can reach the
+# internet, Google or Anthropic, just like the Enclave. Each service answers to
+# the same *.enclave.internal name it will have there, so the Keycloak issuer
+# and redirect URLs are identical for the backend and the (simulated) browser.
+
+name: gk-sealed
+
+networks:
+  sealed:
+    internal: true
+
+x-backend-env: &backend-env
+  MIGRATION_DATABASE_URL: postgresql://gatekeeper_owner:${GATEKEEPER_OWNER_PASSWORD:?}@db.enclave.internal:5432/gatekeeper
+  APP_DB_PASSWORD: ${APP_DB_PASSWORD:?}
+  APP_DATABASE_URL: postgresql://gatekeeper_app:${APP_DB_PASSWORD:?}@db.enclave.internal:5432/gatekeeper
+  # The Enclave's only model. Unreachable here by design: chat must fail with a clean 503.
+  LLM_PROVIDER: vertex-gemini
+  VERTEX_PROJECT: sealed-test
+  VERTEX_LOCATION: global
+  VERTEX_TIMEOUT_SECONDS: "10"
+  ANTHROPIC_API_KEY: ""
+  OKTA_ISSUER: http://auth.enclave.internal:8080/realms/acme
+  OKTA_CLIENT_ID: gatekeeper
+  OKTA_CLIENT_SECRET: ${ACME_CLIENT_SECRET:?}
+  OKTA_REDIRECT_URI: http://api.enclave.internal:8000/auth/okta/callback
+  SAML_IDP_METADATA_URL: http://auth.enclave.internal:8080/realms/globex/protocol/saml/descriptor
+  SAML_IDP_ENTITY_ID: http://auth.enclave.internal:8080/realms/globex
+  SAML_SP_ACS_URL: http://api.enclave.internal:8000/auth/saml/acs
+  SESSION_SECRET: ${SESSION_SECRET:?}
+  TOKEN_SIGNING_KEY_B64: ${TOKEN_SIGNING_KEY_B64:?}
+  TOKEN_ISSUER: http://api.enclave.internal:8000
+  FRONTEND_URL: http://gatekeeper.enclave.internal:3000
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: postgres_admin            # the only superuser; the app never uses it
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?}
+      GATEKEEPER_OWNER_PASSWORD: ${GATEKEEPER_OWNER_PASSWORD:?}
+    volumes:
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro   # creates the non-superuser owner, like Cloud SQL
+    networks:
+      sealed: { aliases: [db.enclave.internal] }
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres_admin -d gatekeeper"]
+      interval: 2s
+      retries: 30
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2.5
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?}
+      KC_HOSTNAME: http://auth.enclave.internal:8080
+      KC_HEALTH_ENABLED: "true"
+      # Substituted into the realm files at import.
+      ACME_CLIENT_SECRET: ${ACME_CLIENT_SECRET:?}
+      ACME_TEST_PASSWORD: ${ACME_TEST_PASSWORD:?}
+      GLOBEX_TEST_PASSWORD: ${GLOBEX_TEST_PASSWORD:?}
+      GATEKEEPER_API_URL: http://api.enclave.internal:8000
+      GATEKEEPER_FRONTEND_URL: http://gatekeeper.enclave.internal:3000
+    volumes:
+      - ../keycloak/realms:/opt/keycloak/data/import:ro
+    networks:
+      sealed: { aliases: [auth.enclave.internal] }
+    healthcheck:
+      # No curl in the image; ask the management port's readiness endpoint over bash's /dev/tcp.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 3s
+      retries: 60
+
+  # One-shot: schema, seed data and embeddings, as the non-superuser owner.
+  setup:
+    image: gatekeeper-backend:local
+    command: ["sh", "-c", "python -m scripts.migrate && python -m scripts.seed && python -m app.rag.ingest"]
+    environment: *backend-env
+    networks: [sealed]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  backend:
+    image: gatekeeper-backend:local
+    build: { context: ../gatekeeper, dockerfile: ../docker/backend.Dockerfile }
+    environment:
+      <<: *backend-env
+      # A (fake) service-account key, so the Vertex AI call gets as far as the network.
+      GOOGLE_APPLICATION_CREDENTIALS: /run/sealed/fake-service-account.json
+      ACME_TEST_PASSWORD: ${ACME_TEST_PASSWORD:?}
+      GLOBEX_TEST_PASSWORD: ${GLOBEX_TEST_PASSWORD:?}
+    volumes:
+      - ${SEALED_RUN_DIR:?}/fake-service-account.json:/run/sealed/fake-service-account.json:ro
+      - ../keycloak/check_logins.py:/checks/check_logins.py:ro
+      - ./sealed_checks.py:/checks/sealed_checks.py:ro
+    networks:
+      sealed: { aliases: [api.enclave.internal] }
+    depends_on:
+      setup: { condition: service_completed_successfully }
+      keycloak: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 3s
+      retries: 40
+
+  frontend:
+    image: gatekeeper-frontend:sealed
+    build:
+      context: ../gatekeeper
+      dockerfile: ../docker/frontend.Dockerfile
+      args: { NEXT_PUBLIC_API_URL: "http://api.enclave.internal:8000" }
+    networks:
+      sealed: { aliases: [gatekeeper.enclave.internal] }
+    depends_on:
+      backend: { condition: service_healthy }

@@ -116,6 +116,13 @@ Each claim gets evidence a reviewer can check:
 | Upgrades don't drop requests | Upgrade and rollback between bundle versions during a k6 load test, with zero failed requests |
 | Data can be recovered | A timed point-in-time restore drill against the recovery-time target |
 
+The first of these already runs locally. `compose/sealed-test.sh` starts the whole stack on a Docker network
+with no route out (`internal: true`), against a Cloud SQL-like owner that is neither superuser nor `BYPASSRLS`,
+with throwaway secrets generated for the run. It checks that Google, Vertex AI, Anthropic, Hugging Face and a raw
+public IP are all unreachable, that all six test users sign in through Keycloak with the right role, that chat
+returns a clean 503 (in under a second) because Vertex AI can't be reached, and that Gatekeeper's full test suite
+passes inside the sealed network.
+
 ## Roadmap
 
 | Milestone | Scope | Status |

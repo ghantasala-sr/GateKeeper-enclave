@@ -10,6 +10,7 @@ import itertools
 
 from google import genai
 from google.auth.exceptions import GoogleAuthError
+from google.auth.exceptions import TransportError as AuthTransportError
 from google.genai import errors as genai_errors
 from google.genai import types
 
@@ -130,6 +131,9 @@ class VertexGeminiModel:
             )
         except genai_errors.APIError as e:
             raise ModelUnavailable(f"Vertex AI returned an error ({e.code})")
+        except AuthTransportError:
+            # Fetching an access token needs Google's token endpoint; blocked egress lands here first.
+            raise ModelUnavailable("Could not reach Vertex AI (Google's token endpoint is unreachable)")
         except GoogleAuthError:
             raise ModelUnavailable("Could not authenticate to Vertex AI (Workload Identity / ADC)")
         except _TRANSPORT_ERRORS:

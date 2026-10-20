@@ -10,6 +10,7 @@ import asyncio
 from types import SimpleNamespace
 
 import anthropic
+import google.auth.exceptions
 import httpx
 import pytest
 from anthropic.types.beta import BetaMessage
@@ -129,6 +130,8 @@ def test_gemini_call_without_id_gets_one():
     genai_errors.APIError(403, {"error": {"code": 403, "message": "Permission denied", "status": "PERMISSION_DENIED"}}),
     genai_errors.APIError(429, {"error": {"code": 429, "message": "Quota", "status": "RESOURCE_EXHAUSTED"}}),
     httpx.ConnectError("connection refused"),
+    google.auth.exceptions.TransportError("token endpoint unreachable"),
+    google.auth.exceptions.DefaultCredentialsError("no ADC"),
     httpx.ReadTimeout("timed out"),
     TimeoutError(),
 ])
