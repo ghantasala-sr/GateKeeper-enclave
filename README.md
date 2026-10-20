@@ -35,7 +35,6 @@ flowchart TB
                 FE["frontend"]
                 BE["backend<br/>Workload Identity"]
                 KC["Keycloak<br/>acme (OIDC) · globex (SAML)"]
-                LLM["self-hosted model<br/>(offline mode)"]
             end
             SQL[("Cloud SQL PostgreSQL 16<br/>private IP · pgvector")]
         end
@@ -48,7 +47,6 @@ flowchart TB
     BASTION -- "helm install from bundle" --> GKE
     BE --> SQL
     BE --> KC
-    BE -. "offline mode" .-> LLM
     BE -- "restricted.googleapis.com<br/>199.36.153.4/30" --> VERTEX
     GKE -- "private Google access" --> AR
     GKE --> OBS
@@ -113,7 +111,6 @@ Each claim gets evidence a reviewer can check:
 | Nothing inside can reach the internet | `curl https://google.com` and `https://api.anthropic.com` time out from a pod and from the bastion, and the firewall logs show both **DENIED** |
 | The blueprint can't drift | CI reads `terraform show -json` and fails on any Cloud NAT, `0.0.0.0/0` route, external IP, public cluster endpoint, or public Cloud SQL IP |
 | Gatekeeper's security still holds | Gatekeeper's test suite runs inside the Enclave on a throwaway database, and black-box access-matrix and prompt-injection checks run against the live deployment |
-| It works fully offline | With Vertex AI permission removed, the self-hosted model still answers and still retrieves 0 forbidden passages |
 | Upgrades don't drop requests | Upgrade and rollback between bundle versions during a k6 load test, with zero failed requests |
 | Data can be recovered | A timed point-in-time restore drill against the recovery-time target |
 
@@ -122,7 +119,7 @@ Each claim gets evidence a reviewer can check:
 | Milestone | Scope | Status |
 |---|---|---|
 | **Groundwork** (local, kind) | Offline-ready images, model provider interface, Keycloak for both tenants, Kubernetes manifests, NetworkPolicies, Helm chart, Terraform basics | Planned |
-| **Enclave** (GCP) | Sealed VPC, firewall, private DNS, bastion, Artifact Registry, private Cloud SQL, private GKE, offline bundle, zero-egress proof, CI plan check, offline mode, `DEPLOYMENT.md` | Planned |
+| **Enclave** (GCP) | Sealed VPC, firewall, private DNS, bastion, Artifact Registry, private Cloud SQL, private GKE, offline bundle, zero-egress proof, CI plan check, `DEPLOYMENT.md` | Planned |
 | **Production** (GCP) | High availability, zero-downtime upgrades, backup and restore, observability with SLOs and an egress alert, Secret Manager CSI and key rotation, signed images and Binary Authorization, internal HTTPS Gateway, runbook and game day | Planned |
 
 ## License
