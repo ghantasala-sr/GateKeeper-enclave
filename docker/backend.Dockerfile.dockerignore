@@ -1,0 +1,19 @@
+# Ignore rules for docker/backend.Dockerfile (BuildKit reads <Dockerfile>.dockerignore).
+# The build context is gatekeeper/; keep it small and free of secrets.
+.git
+.github
+.claude
+.env
+.env.*
+!.env.example
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/node_modules
+**/.next
+backend/logs
+docs
+linkedin-post
+*.md
+!backend/**/*.md

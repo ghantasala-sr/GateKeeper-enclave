@@ -1,4 +1,5 @@
-# Keep build contexts small and free of secrets.
+# Ignore rules for docker/frontend.Dockerfile (BuildKit reads <Dockerfile>.dockerignore).
+# The build context is gatekeeper/; keep it small and free of secrets.
 .git
 .github
 .claude
@@ -14,6 +15,5 @@
 backend/logs
 docs
 linkedin-post
-deploy
 *.md
 !backend/**/*.md

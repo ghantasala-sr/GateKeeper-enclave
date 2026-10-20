@@ -69,14 +69,15 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    SRC["gatekeeper/<br/>app source + Dockerfiles"] --> IMG["container images"] & CHART["Helm chart"]
+    SRC["gatekeeper/<br/>app source"] --> IMG["container images<br/>(docker/)"] & CHART["Helm chart"]
     IMG & CHART --> LOCK["release.lock.yaml<br/>image digests + chart version"]
     LOCK --> BUNDLE["make-bundle.sh"] --> INSTALL["install-from-bundle.sh<br/>(on the bastion)"]
     TF["Terraform"] --> ENV["Enclave environment"]
     INSTALL --> ENV
 ```
 
-- **`gatekeeper/`** is the application: a snapshot of [GateKeeper](https://github.com/ghantasala-sr/GateKeeper) at `20615cb`, plus the changes deployment needs (offline-ready images, and later the model-provider interface and Keycloak configuration). Images and the Helm chart are built from it here.
+- **`gatekeeper/`** is the application and nothing else: a snapshot of [GateKeeper](https://github.com/ghantasala-sr/GateKeeper) at `20615cb`, plus the app-code changes deployment needs (such as loading the embedding model from a path). Deployment files never go inside it.
+- **Images and the Helm chart are built here** from the top-level `docker/` and chart folders, with `gatekeeper/` as the build context.
 - **Everything else** is the environment: infrastructure, environment values, packaging, operational docs, and proof.
 - **A release is pinned by digest** in `release.lock.yaml`, and the offline bundle packages exactly those images. Upgrading the Enclave is a reviewed change to that file.
 
@@ -84,7 +85,8 @@ flowchart LR
 
 ```
 .
-├── gatekeeper/              # Gatekeeper source (snapshot of GateKeeper 20615cb + deployment changes): app, Dockerfiles
+├── gatekeeper/              # the application source only (snapshot of GateKeeper 20615cb + app changes)
+├── docker/                  # Dockerfiles (+ per-Dockerfile .dockerignore), built with gatekeeper/ as the context
 ├── release.lock.yaml        # the exact GateKeeper release to deploy
 ├── terraform/
 │   ├── modules/             # network, firewall, dns, registry, iam, cloudsql, gke, bastion, vpc-sc, monitoring

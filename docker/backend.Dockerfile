@@ -1,7 +1,7 @@
 # Gatekeeper backend: runs with no network access at all.
 #
-# Build from the repository root:
-#   docker build -f deploy/docker/backend.Dockerfile -t gatekeeper-backend:local .
+# Build from the gatekeeper-enclave repo root, with the app source as the context:
+#   docker build -f docker/backend.Dockerfile -t gatekeeper-backend:local gatekeeper
 #
 # Everything the app needs at runtime is inside the image: Python packages, the
 # SAML (xmlsec) libraries, and the embedding model. Nothing is downloaded on start.

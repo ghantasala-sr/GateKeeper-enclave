@@ -1,8 +1,8 @@
 # Gatekeeper frontend (Next.js standalone server).
 #
-# Build from the repository root:
-#   docker build -f deploy/docker/frontend.Dockerfile -t gatekeeper-frontend:local \
-#     --build-arg NEXT_PUBLIC_API_URL=http://localhost:8000 .
+# Build from the gatekeeper-enclave repo root, with the app source as the context:
+#   docker build -f docker/frontend.Dockerfile -t gatekeeper-frontend:local \
+#     --build-arg NEXT_PUBLIC_API_URL=http://localhost:8000 gatekeeper
 #
 # Next.js bakes NEXT_PUBLIC_* values into the JavaScript at build time, so the API URL is
 # a build argument. Fonts (next/font/google) are downloaded during the build and served
