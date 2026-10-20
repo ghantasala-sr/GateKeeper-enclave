@@ -1,0 +1,30 @@
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.next/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+
+# Local trace logs
+backend/logs/
+
+# Local editor/agent config
+.claude/

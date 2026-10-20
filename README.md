@@ -89,6 +89,7 @@ flowchart LR
 
 ```
 .
+├── gatekeeper/              # Gatekeeper source (snapshot of GateKeeper 20615cb + deployment changes): app, Dockerfiles
 ├── release.lock.yaml        # the exact GateKeeper release to deploy
 ├── terraform/
 │   ├── modules/             # network, firewall, dns, registry, iam, cloudsql, gke, bastion, vpc-sc, monitoring
