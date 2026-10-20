@@ -1,0 +1,11 @@
+-- Let operators read the audit log on managed Postgres.
+--
+-- 008 forced RLS on audit_log with only an INSERT policy. On a self-managed
+-- Postgres the owner was a superuser and bypassed RLS, so operators could read
+-- the log. On Cloud SQL there is no superuser: a forced table with no SELECT
+-- policy is unreadable by everyone, including the people who need to audit it.
+--
+-- Not forcing RLS lets the table OWNER (operators, via MIGRATION_DATABASE_URL)
+-- read the log. gatekeeper_app is not the owner, so it is still bound by the
+-- tenant-checked, insert-only rules from 008.
+ALTER TABLE audit_log NO FORCE ROW LEVEL SECURITY;

@@ -4,30 +4,18 @@ Requests use the shapes Okta's "SCIM 2.0 Test App" sends. Each tenant gets a
 throwaway SCIM token for the test; the real tokens are restored afterwards.
 """
 
-import asyncio
 import uuid
 
-import asyncpg
 import pytest
 from fastapi.testclient import TestClient
 
 from app import main
 from app.auth.bridge import ROLE_SCOPES, Principal
 from app.auth.tokens import issue_access_token
-from app.config import settings
 from scripts.create_scim_token import hash_token
+from tests.owner import owner, owner_plain
 
 SCIM = "application/scim+json"
-
-
-def owner(sql: str, *args, fetch=False):
-    async def run():
-        conn = await asyncpg.connect(settings.migration_database_url)
-        try:
-            return await (conn.fetch if fetch else conn.execute)(sql, *args)
-        finally:
-            await conn.close()
-    return asyncio.run(run())
 
 
 @pytest.fixture(scope="module")
@@ -39,13 +27,13 @@ def client():
 @pytest.fixture(scope="module")
 def tokens():
     """Swap in known SCIM tokens for both tenants; restore the real hashes after."""
-    saved = {r["name"]: r["scim_token_hash"] for r in owner("SELECT name, scim_token_hash FROM tenants", fetch=True)}
+    saved = {r["name"]: r["scim_token_hash"] for r in owner_plain("SELECT name, scim_token_hash FROM tenants", fetch=True)}
     tok = {name: f"test-scim-{name}-{uuid.uuid4()}" for name in saved}
     for name, t in tok.items():
-        owner("UPDATE tenants SET scim_token_hash = $1 WHERE name = $2", hash_token(t), name)
+        owner_plain("UPDATE tenants SET scim_token_hash = $1 WHERE name = $2", hash_token(t), name)
     yield tok
     for name, h in saved.items():
-        owner("UPDATE tenants SET scim_token_hash = $1 WHERE name = $2", h, name)
+        owner_plain("UPDATE tenants SET scim_token_hash = $1 WHERE name = $2", h, name)
 
 
 @pytest.fixture

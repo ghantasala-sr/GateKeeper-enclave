@@ -13,6 +13,7 @@ import pytest
 
 from app.auth.bridge import AuthBridgeError, principal_from_okta, role_from_groups
 from app.config import settings
+from tests.owner import tenant_tx
 
 ISSUER = "https://test-okta.example/oauth2/default"
 
@@ -53,7 +54,8 @@ def run_as_app(test, *, idp_type: str, issuer: str):
         finally:
             await tx.rollback()
             await app.close()
-            await owner.execute("DELETE FROM users WHERE tenant_id = $1", tenant_id)
+            async with tenant_tx(owner, tenant_id):
+                await owner.execute("DELETE FROM users WHERE tenant_id = $1", tenant_id)
             await owner.execute("DELETE FROM tenants WHERE id = $1", tenant_id)
             await owner.close()
     asyncio.run(main())
@@ -87,10 +89,11 @@ def test_second_login_reuses_user_and_refreshes_role():
 
 def test_first_login_adopts_precreated_user_by_email():
     async def test(conn, tenant_id, owner):
-        seeded = await owner.fetchval(  # pre-created outside this transaction, as SCIM/seed would
-            "INSERT INTO users (tenant_id, email, role) VALUES ($1, 'pat@test.example', 'employee') RETURNING id",
-            uuid.UUID(tenant_id),
-        )
+        async with tenant_tx(owner, tenant_id):  # pre-created outside this transaction, as SCIM/seed would
+            seeded = await owner.fetchval(
+                "INSERT INTO users (tenant_id, email, role) VALUES ($1, 'pat@test.example', 'employee') RETURNING id",
+                uuid.UUID(tenant_id),
+            )
         p = await principal_from_okta(conn, claims())
         assert p.user_id == str(seeded)
         assert await conn.fetchval("SELECT external_id FROM users WHERE id = $1", seeded) == "00uTEST"

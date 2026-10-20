@@ -14,6 +14,8 @@ from app import db
 from app.auth.bridge import Principal
 from app.config import settings
 from app.rag.search import search
+from tests.owner import connect as owner_connect
+from tests.owner import tenant_tx
 
 TABLES = ("documents", "chunks", "users")
 
@@ -75,10 +77,12 @@ def test_tenant_context_requires_a_transaction():
 @pytest.mark.parametrize("tenant", ["Acme Corp", "Globex"])
 def test_each_tenant_sees_only_its_own_rows(tenant):
     async def test(pool, tenants):
-        # Ground truth per tenant, read as the owner (which bypasses RLS).
-        owner = await asyncpg.connect(settings.migration_database_url)
-        expected = {t: await owner.fetchval(f"SELECT count(*) FROM {t} WHERE tenant_id = $1::uuid", tenants[tenant])
-                    for t in TABLES}
+        # Per-tenant counts as the owner, inside that tenant's context (on Cloud SQL
+        # nothing bypasses RLS). Documents and chunks are fixed by the seed data.
+        owner = await owner_connect()
+        async with tenant_tx(owner, tenants[tenant]):
+            expected = {t: await owner.fetchval(f"SELECT count(*) FROM {t} WHERE tenant_id = $1::uuid", tenants[tenant])
+                        for t in TABLES}
         await owner.close()
         assert expected["documents"] == 10 and expected["chunks"] == 56 and expected["users"] >= 3
         async with db.run_as_tenant(tenants[tenant], "admin") as conn:

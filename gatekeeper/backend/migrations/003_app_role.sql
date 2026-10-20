@@ -5,11 +5,19 @@
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'gatekeeper_app') THEN
-        CREATE ROLE gatekeeper_app LOGIN;
+        CREATE ROLE gatekeeper_app LOGIN;  -- new roles have none of the powers below
+    END IF;
+    -- Verify rather than ALTER: only a superuser may even *clear* SUPERUSER or
+    -- BYPASSRLS, and managed Postgres (Cloud SQL) has no superuser. A role left
+    -- with any of these by hand would silently defeat row-level security.
+    IF EXISTS (
+        SELECT FROM pg_roles WHERE rolname = 'gatekeeper_app'
+          AND (rolsuper OR rolbypassrls OR rolcreatedb OR rolcreaterole OR rolreplication)
+    ) THEN
+        RAISE EXCEPTION 'gatekeeper_app must not have SUPERUSER, BYPASSRLS, CREATEDB, CREATEROLE or REPLICATION';
     END IF;
 END
 $$;
-ALTER ROLE gatekeeper_app NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 
 -- No creating objects anywhere in the schema.
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;

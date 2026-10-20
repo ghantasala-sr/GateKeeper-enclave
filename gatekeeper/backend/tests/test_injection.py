@@ -9,18 +9,16 @@ what the DATABASE RETURNED, not what the model said. No API cost.
 Live versions against real Claude: tests/test_injection_live.py (opt-in).
 """
 
-import asyncio
 import json
 
-import asyncpg
 import pytest
 from fastapi.testclient import TestClient
 
 from app import main
 from app.auth.bridge import ROLE_SCOPES, Principal
 from app.auth.tokens import issue_access_token
-from app.config import settings
 from app.rag import agent
+from tests.owner import owner, owner_plain
 from tests.test_agent import FakeClaude, text, tool_use
 
 INJECTIONS = [
@@ -37,16 +35,10 @@ FORBIDDEN_MARKERS = [
 
 
 def ids() -> dict:
-    async def run():
-        conn = await asyncpg.connect(settings.migration_database_url)
-        try:
-            emp = await conn.fetchrow("SELECT id, tenant_id, email, role FROM users WHERE email = 'employee@acme.example'")
-            globex = await conn.fetchval("SELECT id FROM tenants WHERE name = 'Globex'")
-            return {"employee": Principal(str(emp["id"]), str(emp["tenant_id"]), emp["email"], emp["role"],
-                                          ROLE_SCOPES[emp["role"]]), "globex": str(globex)}
-        finally:
-            await conn.close()
-    return asyncio.run(run())
+    [emp] = owner("SELECT id, tenant_id, email, role FROM users WHERE email = 'employee@acme.example'", fetch=True)
+    [globex] = owner_plain("SELECT id FROM tenants WHERE name = 'Globex'", fetch=True)
+    return {"employee": Principal(str(emp["id"]), str(emp["tenant_id"]), emp["email"], emp["role"],
+                                  ROLE_SCOPES[emp["role"]]), "globex": str(globex["id"])}
 
 
 @pytest.fixture(scope="module")

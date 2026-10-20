@@ -1,6 +1,8 @@
 """Load the fake tenants, users, and documents from backend/seed/.
 
-Safe to re-run. Runs as the database owner (MIGRATION_DATABASE_URL).
+Safe to re-run. Runs as the database owner (MIGRATION_DATABASE_URL). The owner
+need not be a superuser (Cloud SQL has none): row-level security applies to it
+too, so each tenant's rows are written inside that tenant's context.
 Usage: python -m scripts.seed
 """
 
@@ -10,6 +12,7 @@ from pathlib import Path
 import asyncpg
 
 from app.config import settings
+from app.db import set_tenant_context
 
 SEED_DIR = Path(__file__).resolve().parents[1] / "seed"
 
@@ -48,6 +51,9 @@ async def main() -> None:
                     """,
                     name, idp_type, issuer,
                 )
+                # `tenants` has no RLS; everything below does. "admin" so the
+                # role policy also allows writing hr_confidential/executive docs.
+                await set_tenant_context(conn, str(tenant_id), "admin")
 
                 # Seed users. Each IdP login (or SCIM) links to these rows by email.
                 for role in ROLES:

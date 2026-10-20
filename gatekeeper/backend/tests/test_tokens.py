@@ -8,7 +8,6 @@ import json
 import time
 import uuid
 
-import asyncpg
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -18,6 +17,7 @@ from app import main
 from app.auth import tokens
 from app.auth.bridge import ROLE_SCOPES, Principal
 from app.config import settings
+from tests.owner import owner, owner_plain
 
 
 @pytest.fixture(scope="module")
@@ -42,18 +42,10 @@ def acme_user(client):
     created = []
 
     def make(role: str) -> Principal:
-        async def insert():
-            conn = await asyncpg.connect(settings.migration_database_url)
-            try:
-                tenant_id = await conn.fetchval("SELECT id FROM tenants WHERE name = 'Acme Corp'")
-                user_id = await conn.fetchval(
-                    "INSERT INTO users (tenant_id, email, role) VALUES ($1, $2, $3) RETURNING id",
-                    tenant_id, f"test-{uuid.uuid4()}@acme.example", role,
-                )
-                return str(tenant_id), str(user_id)
-            finally:
-                await conn.close()
-        tenant_id, user_id = client.portal.call(insert)
+        tenant_id = str(owner_plain("SELECT id FROM tenants WHERE name = 'Acme Corp'", fetch=True)[0]["id"])
+        [row] = owner("INSERT INTO users (tenant_id, email, role) VALUES ($1::uuid, $2, $3) RETURNING id",
+                      tenant_id, f"test-{uuid.uuid4()}@acme.example", role, tenant=tenant_id, fetch=True)
+        user_id = str(row["id"])
         created.append(user_id)
         return Principal(user_id, tenant_id, "test@acme.example", role, ROLE_SCOPES[role])
 
@@ -63,14 +55,9 @@ def acme_user(client):
 
 
 def db(client, sql: str, *args):
-    """Run setup/teardown SQL as the owner (the app role can't delete users)."""
-    async def run():
-        conn = await asyncpg.connect(settings.migration_database_url)
-        try:
-            return await conn.execute(sql, *args)
-        finally:
-            await conn.close()
-    return client.portal.call(run)
+    """Run setup/teardown SQL on `users` as the owner, in every tenant's context
+    (the app role can't delete users, and the owner doesn't bypass RLS on Cloud SQL)."""
+    return owner(sql, *args)
 
 
 def bearer(token: str) -> dict:

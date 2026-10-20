@@ -13,27 +13,18 @@ from app.auth.bridge import ROLE_SCOPES, AuthBridgeError, Principal
 from app.auth.tokens import issue_access_token
 from app.config import settings
 from app.rag import agent
+from tests.owner import owner, owner_plain
 from tests.test_injection import INJECTIONS, client, compromised_model, env  # noqa: F401 (fixtures)
 from tests.test_scim import DEACTIVATE, create, created, h, tokens  # noqa: F401 (fixtures)
 
 
-def owner_fetch(sql: str, *args):
-    async def run():
-        conn = await asyncpg.connect(settings.migration_database_url)
-        try:
-            return await conn.fetch(sql, *args)
-        finally:
-            await conn.close()
-    return asyncio.run(run())
-
-
 def last_entries(n=5, **where):
     clauses = " AND ".join(f"{k} = ${i + 1}" for i, k in enumerate(where)) or "true"
-    return owner_fetch(f"SELECT * FROM audit_log WHERE {clauses} ORDER BY id DESC LIMIT {n}", *where.values())
+    return owner_plain(f"SELECT * FROM audit_log WHERE {clauses} ORDER BY id DESC LIMIT {n}", *where.values(), fetch=True)
 
 
 def tenant_id(name: str) -> uuid.UUID:
-    return owner_fetch("SELECT id FROM tenants WHERE name = $1", name)[0]["id"]
+    return owner_plain("SELECT id FROM tenants WHERE name = $1", name, fetch=True)[0]["id"]
 
 
 # ---------- the app can only append ----------
@@ -83,8 +74,8 @@ def test_injection_chat_is_audited_with_only_acme_chunks(client, env, monkeypatc
     assert entry["question"] == question
     assert str(entry["tenant_id"]) == env["employee"].tenant_id
     assert entry["chunk_ids"], "the chunks the agent received are on record"
-    chunks = owner_fetch("SELECT t.name, c.classification FROM chunks c JOIN tenants t ON t.id = c.tenant_id "
-                         "WHERE c.id = ANY($1::uuid[])", entry["chunk_ids"])
+    chunks = owner("SELECT t.name, c.classification FROM chunks c JOIN tenants t ON t.id = c.tenant_id "
+                   "WHERE c.id = ANY($1::uuid[])", entry["chunk_ids"], fetch=True)
     assert len(chunks) == len(entry["chunk_ids"])
     assert {(r["name"], r["classification"]) for r in chunks} == {("Acme Corp", "public")}
 
@@ -94,7 +85,7 @@ def test_injection_chat_is_audited_with_only_acme_chunks(client, env, monkeypatc
 def test_successful_login_is_audited(client):  # noqa: F811
     if not settings.okta_issuer:
         pytest.skip("OKTA_ISSUER not set")
-    [emp] = owner_fetch("SELECT id, external_id FROM users WHERE email = 'employee@acme.example'")
+    [emp] = owner("SELECT id, external_id FROM users WHERE email = 'employee@acme.example'", fetch=True)
     claims = {"iss": settings.okta_issuer.rstrip("/"), "sub": emp["external_id"] or "00uTESTEMP",
               "email": "employee@acme.example", "groups": ["gk-employee"]}
     p = client.portal.call(oidc.principal_for, claims)
@@ -114,7 +105,7 @@ def test_refused_login_is_audited_without_a_user(client):  # noqa: F811
     assert entry["tenant_id"] == tenant_id("Acme Corp")
     assert "no Gatekeeper role" in entry["detail"]
     # ...and no user was created for them.
-    assert not owner_fetch("SELECT 1 FROM users WHERE email = 'intruder@acme.example'")
+    assert not owner("SELECT 1 FROM users WHERE email = 'intruder@acme.example'", fetch=True)
 
 
 # ---------- SCIM and the firing test ----------

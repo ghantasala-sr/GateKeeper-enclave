@@ -1,6 +1,7 @@
 """Split seed documents into chunks, embed them, and store them in `chunks`.
 
-Re-running replaces all chunks. Runs as the database owner (MIGRATION_DATABASE_URL).
+Re-running replaces all chunks. Runs as the database owner (MIGRATION_DATABASE_URL),
+which need not be a superuser: each tenant is processed inside its own RLS context.
 Run `python -m scripts.seed` first. Usage: python -m app.rag.ingest
 """
 
@@ -11,6 +12,7 @@ from pathlib import Path
 import asyncpg
 
 from app.config import settings
+from app.db import set_tenant_context
 from app.rag.embeddings import embed, to_pgvector
 from scripts.seed import SEED_DIR, TENANTS, parse_front_matter
 
@@ -32,8 +34,14 @@ async def main() -> None:
     conn = await asyncpg.connect(settings.migration_database_url)
     try:
         async with conn.transaction():
-            await conn.execute("DELETE FROM chunks")
             for folder, (tenant_name, *_) in TENANTS.items():
+                tenant_id = await conn.fetchval("SELECT id FROM tenants WHERE name = $1", tenant_name)
+                if tenant_id is None:
+                    raise SystemExit(f"tenant {tenant_name!r} not found; run scripts.seed first")
+                await set_tenant_context(conn, str(tenant_id), "admin")
+                # Scope explicitly: a superuser owner ignores RLS, and an unscoped
+                # DELETE would wipe the tenants already ingested in this run.
+                await conn.execute("DELETE FROM chunks WHERE tenant_id = $1", tenant_id)
                 total = 0
                 for path in sorted((SEED_DIR / folder).glob("*.md")):
                     meta, body = parse_front_matter(path.read_text())
