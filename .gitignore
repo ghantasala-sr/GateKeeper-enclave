@@ -1,0 +1,37 @@
+# Terraform
+.terraform/
+.terraform.lock.hcl.bak
+*.tfstate
+*.tfstate.*
+*.tfplan
+plan.out
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*.auto.tfvars
+terraform.tfvars
+
+# Secrets and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*-key.json
+credentials*.json
+
+# Bundles and build output
+gatekeeper-bundle-*/
+*.tgz
+*.tar
+dist/
+
+# k6 / drill raw output
+proof/results/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+.claude/
