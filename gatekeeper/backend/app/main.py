@@ -1,7 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
 
-import anthropic
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -13,6 +12,7 @@ from app.auth import oidc, saml, tokens
 from app.auth.bridge import Principal
 from app.scim import routes as scim
 from app.config import settings
+from app.llm import ModelUnavailable, get_model
 from app.rag.embeddings import embed
 from app.rag.agent import run_agent
 
@@ -115,17 +115,13 @@ async def chat(req: ChatRequest, request: Request,
         }
     user = {"email": principal.email, "role": principal.role, "tenant": tenant_name}
 
-    if not settings.anthropic_api_key:
-        raise HTTPException(503, "Chat model is not configured; set ANTHROPIC_API_KEY in .env")
+    if reason := get_model().unavailable_reason():
+        raise HTTPException(503, reason)
     try:
         # The agent searches as this principal; RLS limits what its tool can see.
         text, chunks = await run_agent(principal, req.question, trace=trace)
-    except anthropic.AuthenticationError:
-        raise HTTPException(503, "Chat model rejected the API key; check ANTHROPIC_API_KEY in .env")
-    except anthropic.RateLimitError:
-        raise HTTPException(503, "Chat model is rate limited; try again shortly")
-    except anthropic.APIConnectionError:
-        raise HTTPException(503, "Could not reach the chat model")
+    except ModelUnavailable as e:
+        raise HTTPException(503, str(e))
 
     chunk_ids = list(dict.fromkeys(c.id for c in chunks))
     with trace.step("Audit log entry written", "audit") as t:

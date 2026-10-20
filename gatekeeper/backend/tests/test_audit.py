@@ -12,7 +12,7 @@ from app.auth import oidc
 from app.auth.bridge import ROLE_SCOPES, AuthBridgeError, Principal
 from app.auth.tokens import issue_access_token
 from app.config import settings
-from app.rag import agent
+from tests.test_agent import use_model
 from tests.owner import owner, owner_plain
 from tests.test_injection import INJECTIONS, client, compromised_model, env  # noqa: F401 (fixtures)
 from tests.test_scim import DEACTIVATE, create, created, h, tokens  # noqa: F401 (fixtures)
@@ -65,7 +65,7 @@ def test_app_cannot_write_another_tenants_log():
 # ---------- the injection attempt is on record, with no Globex data ----------
 
 def test_injection_chat_is_audited_with_only_acme_chunks(client, env, monkeypatch):  # noqa: F811
-    monkeypatch.setattr(agent, "client", compromised_model(env["globex"]))
+    use_model(monkeypatch, compromised_model(env["globex"]))
     question = INJECTIONS[0]
     resp = client.post("/chat", json={"question": question}, headers={"Authorization": f"Bearer {env['token']}"})
     assert resp.status_code == 200

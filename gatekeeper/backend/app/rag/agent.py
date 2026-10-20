@@ -7,18 +7,20 @@ verified access token. The model never sees it and can't change it: the only
 thing it controls is the `query` string. The tool reads the Principal from
 state and searches inside db.run_as(principal), so RLS applies exactly as if
 the user had searched directly. There is no "master key" connection.
+
+The agent talks to the model only through app.llm (Gemini on Vertex AI in the
+Enclave, Claude for local development), so none of this depends on a provider.
 """
 
 import operator
 import time
 from typing import Annotated, Any, TypedDict
 
-import anthropic
 from langgraph.graph import END, START, StateGraph
 
 from app import db
 from app.auth.bridge import Principal
-from app.config import settings
+from app.llm import ModelReply, ToolResult, ToolSpec, Turn, get_model
 from app.rag.search import Chunk, search
 from app.tracing import RequestTrace
 
@@ -31,27 +33,24 @@ answer from what the tool returns. If it doesn't contain the answer, reply
 exactly: "I don't have access to that information." Keep answers short and cite
 the document reference in brackets, e.g. [ACME-PUB-02]."""
 
-SEARCH_TOOL = {
-    "name": "search_documents",
-    "description": "Search the internal documents this employee can access. Returns the most relevant passages.",
-    "strict": True,
-    "input_schema": {
+SEARCH_TOOL = ToolSpec(
+    name="search_documents",
+    description="Search the internal documents this employee can access. Returns the most relevant passages.",
+    parameters={
         "type": "object",
         "properties": {"query": {"type": "string", "description": "What to search for, in plain words."}},
         "required": ["query"],
         "additionalProperties": False,
     },
-}
+)
 
 NO_ACCESS = "I don't have access to that information."
-
-client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key or None)  # key checked in /chat
 
 
 class AgentState(TypedDict):
     principal: Principal                                 # set once by run_agent(); nodes only read it
     trace: RequestTrace | None                           # optional; for the frontend's inspector
-    messages: Annotated[list[dict[str, Any]], operator.add]  # append-only conversation with Claude
+    messages: Annotated[list[Turn], operator.add]       # append-only conversation with the model
     retrieved: Annotated[list[Chunk], operator.add]      # every chunk any tool call returned
     stop_reason: str
     answer: str
@@ -94,60 +93,43 @@ class _NullStep:
 
 
 async def call_model(state: AgentState) -> dict:
-    n = sum(1 for m in state["messages"] if m["role"] == "assistant") + 1
+    n = sum(1 for m in state["messages"] if m.role == "assistant") + 1
     with _trace_step(state, f"Model call {n}", "model") as t:
-        response = await _create(state)
-        usage = getattr(response, "usage", None)
+        reply = await get_model().complete(system=SYSTEM_PROMPT, turns=state["messages"], tools=[SEARCH_TOOL])
         t["details"] = {
-            "model": settings.chat_model,
-            "stop_reason": response.stop_reason,
-            "tool_calls_requested": [{"tool": b.name, "input": b.input} for b in response.content if b.type == "tool_use"],
-            "input_tokens": getattr(usage, "input_tokens", None),
-            "output_tokens": getattr(usage, "output_tokens", None),
+            "model": reply.model,
+            "provider": reply.provider,
+            "stop_reason": reply.raw_stop,
+            "tool_calls_requested": [{"tool": c.name, "input": c.arguments} for c in reply.tool_calls],
+            "input_tokens": reply.usage.get("input_tokens"),
+            "output_tokens": reply.usage.get("output_tokens"),
             "sees": "only the question and chunks returned by earlier tool calls; never the user's identity",
         }
-    return _model_update(response)
+    return _model_update(reply)
 
 
-async def _create(state: AgentState):
-    return await client.beta.messages.create(
-        model=settings.chat_model,
-        max_tokens=16000,
-        system=SYSTEM_PROMPT,
-        tools=[SEARCH_TOOL],
-        output_config={"effort": "low"},
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
-        messages=state["messages"],
-    )
-
-
-def _model_update(response) -> dict:
-    update: dict = {
-        # Echo content back unchanged (thinking and fallback blocks included).
-        "messages": [{"role": "assistant", "content": response.content}],
-        "stop_reason": response.stop_reason,
-    }
-    if response.stop_reason == "refusal":
+def _model_update(reply: ModelReply) -> dict:
+    # The adapter replays the provider's own form of this turn unchanged next call.
+    update: dict = {"messages": [reply.as_turn()], "stop_reason": reply.stop}
+    if reply.stop == "refusal":
         update["answer"] = "Sorry, I can't help with that request."
-    elif response.stop_reason != "tool_use":
-        update["answer"] = "".join(b.text for b in response.content if b.type == "text") or NO_ACCESS
+    elif reply.stop != "tool_use":
+        update["answer"] = reply.text or NO_ACCESS
     return update
 
 
 async def run_tools(state: AgentState) -> dict:
     principal = state["principal"]
-    tool_uses = [b for b in state["messages"][-1]["content"] if b.type == "tool_use"]
     results, retrieved = [], []
-    for block in tool_uses:
-        with _trace_step(state, f"{block.name}({_short(block.input)})", "tool") as t:
-            if block.name != SEARCH_TOOL["name"]:
-                chunks, error = [], f"Unknown tool {block.name!r}."
+    for call in state["messages"][-1].tool_calls:
+        with _trace_step(state, f"{call.name}({_short(call.arguments)})", "tool") as t:
+            if call.name != SEARCH_TOOL.name:
+                chunks, error = [], f"Unknown tool {call.name!r}."
             else:
-                chunks, error = await search_documents(principal, block.input)
+                chunks, error = await search_documents(principal, call.arguments)
             t["ok"] = error is None
             t["details"] = {
-                "model_asked_for": block.input,
+                "model_asked_for": call.arguments,
                 "accepted": error is None,
                 **({"rejected_because": error} if error else {}),
                 "ran_as": f"{principal.role} @ tenant {principal.tenant_id[:8]}… (db.run_as, from the token, not the model)",
@@ -156,12 +138,10 @@ async def run_tools(state: AgentState) -> dict:
                              for c in chunks],
             }
         retrieved.extend(chunks)
-        result = {"type": "tool_result", "tool_use_id": block.id, "content": error or format_results(chunks)}
-        if error:
-            result["is_error"] = True
-        results.append(result)
-    # All results go back in ONE user message.
-    return {"messages": [{"role": "user", "content": results}], "retrieved": retrieved,
+        results.append(ToolResult(call_id=call.id, name=call.name, content=error or format_results(chunks),
+                                  is_error=error is not None))
+    # All results for one model turn go back together.
+    return {"messages": [Turn(role="tool", tool_results=tuple(results))], "retrieved": retrieved,
             "tool_rounds": state["tool_rounds"] + 1}
 
 
@@ -191,7 +171,7 @@ async def run_agent(principal: Principal, question: str, trace: RequestTrace | N
     final = await agent.ainvoke({
         "principal": principal,
         "trace": trace,
-        "messages": [{"role": "user", "content": question}],
+        "messages": [Turn(role="user", text=question)],
         "retrieved": [],
         "stop_reason": "",
         "answer": "",

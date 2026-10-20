@@ -18,6 +18,7 @@ from app.auth import tokens
 from app.auth.bridge import ROLE_SCOPES, Principal
 from app.config import settings
 from tests.owner import owner, owner_plain
+from tests.test_agent import FakeChatModel
 
 
 @pytest.fixture(scope="module")
@@ -33,7 +34,7 @@ def stub_chat_model(monkeypatch, tmp_path):
     async def fake_run_agent(principal, question, trace=None):
         return "stub answer", []
     monkeypatch.setattr(main, "run_agent", fake_run_agent)
-    monkeypatch.setattr(main.settings, "anthropic_api_key", "stub")
+    monkeypatch.setattr(main, "get_model", FakeChatModel)  # /chat's "is a model configured?" check
 
 
 @pytest.fixture

@@ -14,6 +14,7 @@ from app.auth.bridge import ROLE_SCOPES, Principal
 from app.auth.tokens import issue_access_token
 from scripts.create_scim_token import hash_token
 from tests.owner import owner, owner_plain
+from tests.test_agent import FakeChatModel
 
 SCIM = "application/scim+json"
 
@@ -208,7 +209,7 @@ def test_deactivation_blocks_chat_immediately(client, tokens, created, monkeypat
     async def fake_run_agent(principal, question, trace=None):
         return "ok", []
     monkeypatch.setattr(main, "run_agent", fake_run_agent)
-    monkeypatch.setattr(main.settings, "anthropic_api_key", "stub")
+    monkeypatch.setattr(main, "get_model", FakeChatModel)  # /chat's "is a model configured?" check
     monkeypatch.setattr(main.trace_log, "LOG_FILE", tmp_path / "trace.jsonl")
 
     user = create(client, tokens["Acme Corp"], created)

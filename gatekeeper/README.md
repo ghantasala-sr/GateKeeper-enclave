@@ -76,7 +76,7 @@ same questions retrieve **0** forbidden passages. What the model never receives,
   Microsoft Entra ID in production). Both normalize to one `Principal`.
 - **Tenant and role isolation in PostgreSQL.** Forced row-level security with a permissive tenant policy
   and a restrictive role policy, set per transaction. Fails closed.
-- **An AI agent with no master key.** A LangGraph agent on Claude whose only tool searches as the signed-in
+- **An AI agent with no master key.** A LangGraph agent (Gemini on Vertex AI, or Claude locally) whose only tool searches as the signed-in
   user. The model chooses the query text and nothing else.
 - **Short-lived access tokens with a live database check.** 15-minute RS256 JWTs with scopes, revalidated
   against the database on every request.
@@ -118,7 +118,7 @@ flowchart LR
         LOG[("audit_log<br/>INSERT only")]
     end
 
-    CLAUDE["Claude<br/>(Anthropic API)"]
+    CLAUDE["Chat model<br/>(Gemini on Vertex AI · Claude locally)"]
 
     UI -- "sign in" --> OKTA & KC
     OKTA & KC -- "signed ID token / assertion" --> AUTH
@@ -193,7 +193,8 @@ backend/app/
 │   ├── ingest.py      Splits seed documents into section chunks, embeds, stores
 │   ├── embeddings.py  Local all-MiniLM-L6-v2 (384-d) sentence embeddings
 │   ├── search.py      HNSW vector search with pgvector iterative scans, RLS-filtered
-│   └── agent.py       LangGraph graph (call_model ⇄ run_tools) on the Anthropic SDK
+│   └── agent.py       LangGraph graph (call_model ⇄ run_tools), provider-neutral
+├── llm/               Chat-model interface: vertex_gemini.py (Enclave), anthropic.py (local dev)
 ├── scim/routes.py     SCIM 2.0 /Users and /Groups for Okta provisioning
 ├── audit.py           Insert-only audit writes under tenant context
 ├── tracing.py         Per-request step trace returned to the UI
@@ -337,7 +338,10 @@ stateDiagram-v2
 - Each tool call runs `search()` inside `db.run_as(principal)`, so it gets exactly the user's RLS view.
 - Search enables `hnsw.iterative_scan = relaxed_order`. Without it, an approximate index can return candidates
   that RLS then filters away entirely: an employee asking about salaries got **0** results instead of 5.
-- Claude is called through the official Anthropic SDK, with server-side refusal fallback enabled.
+- The agent calls the model only through `app/llm` (`LLM_PROVIDER`): Gemini on Vertex AI with automatic
+  function calling disabled, or Claude through the Anthropic SDK with server-side refusal fallback. Each adapter
+  replays the model's previous turn unchanged (thought signatures, thinking blocks), and any failure to reach the
+  model becomes a clean 503.
 
 ### Provisioning and instant lockout
 
@@ -394,7 +398,7 @@ they're allowed to see.
 | API | FastAPI, Uvicorn, pydantic-settings |
 | Database | PostgreSQL 16 with pgvector 0.8 (HNSW, iterative scans), asyncpg |
 | Identity | authlib (OIDC), python3-saml + xmlsec (SAML), PyJWT (RS256), SCIM 2.0 |
-| AI | Anthropic Claude via the official SDK, LangGraph, sentence-transformers (local embeddings) |
+| AI | Gemini on Vertex AI (Google Gen AI SDK) or Anthropic Claude, LangGraph, sentence-transformers (local embeddings) |
 | Frontend | Next.js 16, React 19 |
 | Local IdP | Keycloak 26 (SAML) in Docker |
 | Tests | pytest against a real Postgres; scripted model fakes; opt-in live model tests |
@@ -476,7 +480,9 @@ All settings are read from `.env` at the repository root. See `.env.example` for
 | `SAML_IDP_METADATA_URL`, `SAML_IDP_ENTITY_ID` | Globex's SAML IdP (entity ID is pinned) |
 | `TOKEN_SIGNING_KEY_B64`, `TOKEN_ISSUER` | RS256 key and issuer for Gatekeeper access tokens |
 | `SESSION_SECRET` | Signs the short-lived login-handshake cookie |
-| `ANTHROPIC_API_KEY`, `CHAT_MODEL` | Chat model (default `claude-opus-5-5`) |
+| `LLM_PROVIDER` | `vertex-gemini` (the Enclave) or `anthropic` (local development, the default) |
+| `VERTEX_PROJECT`, `VERTEX_LOCATION`, `GEMINI_MODEL` | Gemini on Vertex AI (default `gemini-3.8-flash`, `global`); auth is ADC / Workload Identity |
+| `ANTHROPIC_API_KEY`, `CHAT_MODEL` | Claude (default `claude-opus-5-5`) |
 | `FRONTEND_URL` | Allowed CORS origin and post-login redirect target |
 | `KEYCLOAK_ADMIN_PASSWORD`, `GLOBEX_TEST_PASSWORD` | Local Keycloak admin and Globex test users |
 
@@ -484,8 +490,8 @@ All settings are read from `.env` at the repository root. See `.env.example` for
 
 ```bash
 cd backend
-.venv/bin/python -m pytest                                    # 225 tests, no model calls
-RUN_LIVE=1 .venv/bin/python -m pytest tests/test_injection_live.py -s   # 3 tests against real Claude
+.venv/bin/python -m pytest                                    # 255 tests, no model calls
+RUN_LIVE=1 .venv/bin/python -m pytest tests/test_injection_live.py -s   # 3 tests against the real LLM_PROVIDER model
 ```
 
 The suite runs against the real, migrated and seeded database, as the real `gatekeeper_app` role.

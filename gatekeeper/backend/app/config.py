@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -12,8 +13,15 @@ class Settings(BaseSettings):
     migration_database_url: str  # owner: migrations, seed, ingest ONLY
     app_database_url: str        # gatekeeper_app: the running app
     app_db_password: str = ""
+
+    # Chat model. The Enclave uses vertex-gemini only; anthropic is for local development.
+    llm_provider: Literal["vertex-gemini", "anthropic"] = "anthropic"  # checked at startup
     anthropic_api_key: str = ""
-    chat_model: str = "claude-opus-5-5"
+    chat_model: str = "claude-opus-5-5"          # Anthropic model id
+    vertex_project: str = ""
+    vertex_location: str = "global"
+    gemini_model: str = "gemini-3.8-flash"
+    vertex_timeout_seconds: int = 60
 
     okta_issuer: str = ""
     okta_client_id: str = ""

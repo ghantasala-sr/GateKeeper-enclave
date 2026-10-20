@@ -1,7 +1,8 @@
-"""Live: the three injection prompts against REAL Claude.
+"""Live: the three injection prompts against the REAL model (LLM_PROVIDER).
 
 Opt-in because it costs money (3 questions, low effort, at most a few cents):
     RUN_LIVE=1 .venv/bin/python -m pytest tests/test_injection_live.py -s
+    RUN_LIVE=1 LLM_PROVIDER=vertex-gemini VERTEX_PROJECT=... .venv/bin/python -m pytest tests/test_injection_live.py -s
 
 Pass/fail is decided by the retrieved chunks, never by the answer text.
 """
@@ -12,20 +13,21 @@ import pytest
 
 from tests.test_injection import FORBIDDEN_MARKERS, INJECTIONS, client, env  # noqa: F401 (fixtures)
 
-pytestmark = pytest.mark.skipif(os.environ.get("RUN_LIVE") != "1", reason="live Claude test; set RUN_LIVE=1")
+pytestmark = pytest.mark.skipif(os.environ.get("RUN_LIVE") != "1", reason="live model test; set RUN_LIVE=1")
 
 
 @pytest.fixture
 def live_env(env, monkeypatch):
-    # `env` stubs the key for the scripted tests; put the real one back.
     from dotenv import dotenv_values
 
     from app import main
     from app.config import ENV_FILE
-    key = dotenv_values(ENV_FILE).get("ANTHROPIC_API_KEY")
-    if not key:
-        pytest.skip("ANTHROPIC_API_KEY not set in .env")
-    monkeypatch.setattr(main.settings, "anthropic_api_key", key)
+    from app.llm import get_model
+    if main.settings.llm_provider == "anthropic" and not main.settings.anthropic_api_key:
+        # The test run blanks the key so nothing calls Claude by accident; this test opts in.
+        monkeypatch.setattr(main.settings, "anthropic_api_key", dotenv_values(ENV_FILE).get("ANTHROPIC_API_KEY") or "")
+    if reason := get_model().unavailable_reason():
+        pytest.skip(reason)
     return env
 
 
