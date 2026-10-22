@@ -124,6 +124,15 @@ def test_valid_login_returns_access_token(sp):
                        "attributes": {"email": ["hr.manager@globex.example"], "role": ["hr_manager"]}}
 
 
+def test_login_works_behind_a_gateway_that_strips_a_prefix(sp, monkeypatch):
+    """The browser posts to https://.../api/auth/saml/acs; we receive /auth/saml/acs over HTTP."""
+    public_acs = "https://gatekeeper.example/api/auth/saml/acs"
+    monkeypatch.setattr(saml.settings, "saml_sp_acs_url", public_acs)
+    resp = post(sp, signed_response(start_login(sp), response_kwargs={"destination": public_acs},
+                                    recipient=public_acs))
+    assert resp.status_code == 200, resp.text
+
+
 def test_metadata_is_valid(sp):
     resp = sp.get("/auth/saml/metadata")
     assert resp.status_code == 200

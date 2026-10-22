@@ -1,0 +1,12 @@
+# A6: a stable name (backend.gatekeeper.svc) and virtual IP in front of the
+# backend pods, which come and go. Traffic only reaches pods whose readiness
+# probe passes.
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: gatekeeper
+spec:
+  selector: { app: backend }
+  ports:
+    - port: 8000

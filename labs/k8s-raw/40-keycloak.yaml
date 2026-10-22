@@ -1,0 +1,63 @@
+# A6: Keycloak inside the cluster, with both realms imported at startup from
+# the keycloak-realms ConfigMap (built from keycloak/realms/ by apply-all.sh).
+# start-dev keeps its database inside the pod; the realm files pin user IDs, so
+# a restart re-imports the same users (see keycloak/realms).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: gatekeeper
+  labels: { app: keycloak }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: keycloak }
+  template:
+    metadata:
+      labels: { app: keycloak }
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.2.5
+          imagePullPolicy: IfNotPresent
+          args: ["start-dev", "--import-realm"]
+          envFrom:
+            - secretRef: { name: keycloak-secrets }
+          env:
+            - { name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin }
+            - { name: KC_HOSTNAME, value: "http://auth.gatekeeper.localhost:8088" }   # the issuer, for browser and backend alike
+            - { name: KC_HEALTH_ENABLED, value: "true" }
+            # Substituted into the realm files at import.
+            - { name: GATEKEEPER_API_URL, value: "http://gatekeeper.localhost:8088/api" }
+            - { name: GATEKEEPER_FRONTEND_URL, value: "http://gatekeeper.localhost:8088" }
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: management, containerPort: 9000 }
+          resources:
+            requests: { cpu: 250m, memory: 768Mi }
+            limits: { memory: 1536Mi }
+          startupProbe:
+            httpGet: { path: /health/started, port: management }
+            failureThreshold: 60
+            periodSeconds: 3
+          readinessProbe:
+            httpGet: { path: /health/ready, port: management }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health/live, port: management }
+            periodSeconds: 10
+          volumeMounts:
+            - { name: realms, mountPath: /opt/keycloak/data/import, readOnly: true }
+      volumes:
+        - name: realms
+          configMap: { name: keycloak-realms }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: gatekeeper
+spec:
+  selector: { app: keycloak }
+  ports:
+    - { name: http, port: 8080 }

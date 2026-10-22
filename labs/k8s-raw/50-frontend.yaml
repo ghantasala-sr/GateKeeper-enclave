@@ -1,0 +1,42 @@
+# A6: the Next.js frontend. Built with NEXT_PUBLIC_API_URL=/api, so the browser
+# calls the API on the frontend's own origin and the Gateway routes /api to the
+# backend: one image works behind any hostname, and no CORS is needed.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: gatekeeper
+  labels: { app: frontend }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: frontend }
+  template:
+    metadata:
+      labels: { app: frontend }
+    spec:
+      containers:
+        - name: frontend
+          image: gatekeeper-frontend:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /, port: 3000 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /, port: 3000 }
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: gatekeeper
+spec:
+  selector: { app: frontend }
+  ports:
+    - port: 3000

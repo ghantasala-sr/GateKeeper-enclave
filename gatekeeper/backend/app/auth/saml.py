@@ -8,6 +8,7 @@ this browser started (InResponseTo), and each request ID works once.
 """
 
 import logging
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
@@ -70,13 +71,21 @@ def saml_settings() -> dict:
 
 
 async def _request_data(request: Request) -> dict:
-    """Describe the HTTP request the way python3-saml expects."""
+    """Describe the HTTP request the way python3-saml expects.
+
+    The URL is our configured public ACS URL, not the one this process sees:
+    behind a gateway that serves the API under /api (or terminates TLS), the
+    browser posted to SAML_SP_ACS_URL while we receive /auth/saml/acs over
+    HTTP. python3-saml checks the response's Destination and Recipient
+    against this URL, so it must be the address the IdP was told to use.
+    """
     form = await request.form() if request.method == "POST" else {}
+    public = urlsplit(settings.saml_sp_acs_url)
     return {
-        "https": "on" if request.url.scheme == "https" else "off",
-        "http_host": request.url.hostname,
-        "server_port": request.url.port,
-        "script_name": request.url.path,
+        "https": "on" if public.scheme == "https" else "off",
+        "http_host": public.hostname,
+        "server_port": public.port,
+        "script_name": public.path,
         "get_data": dict(request.query_params),
         "post_data": dict(form),
     }

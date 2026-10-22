@@ -1,5 +1,13 @@
-# A5: the backend's NON-secret settings. Safe to commit and to read with kubectl.
+# A5/A6: the backend's NON-secret settings. Safe to commit and to read with kubectl.
 # Secrets live in Secrets, created by make-secrets.sh and never written to git.
+#
+# A6: every public URL goes through the Gateway (60-gateway.yaml) on port 8088:
+#   http://gatekeeper.localhost:8088        the frontend, with the API under /api
+#   http://auth.gatekeeper.localhost:8088   Keycloak
+# Browsers resolve *.localhost to this machine and treat it as a secure context,
+# so Keycloak's Secure cookies work over plain HTTP. Inside the cluster CoreDNS
+# sends the same names to the Gateway (coredns-rewrite.sh), so the backend checks
+# exactly the issuer URL the browser sees.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -10,5 +18,13 @@ data:
   VERTEX_PROJECT: ""                 # set in Part B; until then chat returns a clean 503
   VERTEX_LOCATION: global
   GEMINI_MODEL: gemini-3.8-flash
-  FRONTEND_URL: http://gatekeeper.enclave.internal:3000
-  TOKEN_ISSUER: http://api.enclave.internal:8000
+  FRONTEND_URL: http://gatekeeper.localhost:8088
+  TOKEN_ISSUER: http://gatekeeper.localhost:8088/api
+  # Acme: OIDC against Keycloak's acme realm (OKTA_* names kept from the Okta setup)
+  OKTA_ISSUER: http://auth.gatekeeper.localhost:8088/realms/acme
+  OKTA_CLIENT_ID: gatekeeper
+  OKTA_REDIRECT_URI: http://gatekeeper.localhost:8088/api/auth/okta/callback
+  # Globex: SAML against Keycloak's globex realm
+  SAML_IDP_METADATA_URL: http://auth.gatekeeper.localhost:8088/realms/globex/protocol/saml/descriptor
+  SAML_IDP_ENTITY_ID: http://auth.gatekeeper.localhost:8088/realms/globex
+  SAML_SP_ACS_URL: http://gatekeeper.localhost:8088/api/auth/saml/acs

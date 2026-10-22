@@ -18,6 +18,7 @@ spec:
           command: ["sh", "-c", "python -m scripts.migrate && python -m scripts.seed && python -m app.rag.ingest"]
           envFrom:
             - secretRef: { name: db-owner }        # the owner login: setup is the only thing that gets it
+            - configMapRef: { name: backend-config }   # seed records each tenant's IdP issuer
           env:
             # Required by the app's settings, unused by the setup scripts.
             - { name: APP_DATABASE_URL, value: unused-by-setup }

@@ -26,6 +26,10 @@ spec:
           envFrom:
             - configMapRef: { name: backend-config }
             - secretRef: { name: backend-secrets }
+          env:
+            # Shared with Keycloak, so it lives in keycloak-secrets: one value, two readers.
+            - name: OKTA_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: keycloak-secrets, key: ACME_CLIENT_SECRET } }
           resources:
             requests: { cpu: 250m, memory: 512Mi }   # what the scheduler reserves on a node
             limits: { memory: 1Gi }                  # above this the container is OOMKilled
