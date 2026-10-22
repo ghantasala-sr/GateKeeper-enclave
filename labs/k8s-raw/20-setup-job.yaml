@@ -1,0 +1,24 @@
+# A4 lab only: create the schema, seed data and embeddings once, before the
+# backend starts. A Job runs pods to completion instead of keeping them running.
+#   kubectl wait --for=condition=complete job/setup -n gatekeeper --timeout=5m
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: setup
+  namespace: gatekeeper
+spec:
+  backoffLimit: 6          # Postgres may not be ready yet; retry instead of failing
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: setup
+          image: gatekeeper-backend:local
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "python -m scripts.migrate && python -m scripts.seed && python -m app.rag.ingest"]
+          env:
+            - { name: MIGRATION_DATABASE_URL, value: "postgresql://gatekeeper_owner:lab-only-owner@postgres:5432/gatekeeper" }
+            - { name: APP_DB_PASSWORD, value: lab-only-app }
+            - { name: APP_DATABASE_URL, value: "postgresql://gatekeeper_app:lab-only-app@postgres:5432/gatekeeper" }
+            - { name: SESSION_SECRET, value: unused-by-setup }
+            - { name: TOKEN_SIGNING_KEY_B64, value: unused-by-setup }

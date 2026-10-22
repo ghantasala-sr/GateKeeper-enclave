@@ -1,0 +1,47 @@
+# A4 lab only: a throwaway Postgres so the backend has something to connect to.
+# Its data lives in an emptyDir and is gone when the pod is. The Enclave uses
+# private Cloud SQL instead (Part B); real storage for in-cluster state is A7.
+#
+# The password is a lab value, written in plain text on purpose. A5 moves the
+# backend's settings into a ConfigMap and a Secret.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: gatekeeper
+  labels: { app: postgres }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg17
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: POSTGRES_USER, value: gatekeeper_owner }
+            - { name: POSTGRES_PASSWORD, value: lab-only-owner }
+            - { name: POSTGRES_DB, value: gatekeeper }
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+# A preview of A6: a stable name (postgres.gatekeeper.svc) in front of the pod,
+# whose own IP changes every time it is recreated.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: gatekeeper
+spec:
+  selector: { app: postgres }
+  ports:
+    - port: 5432

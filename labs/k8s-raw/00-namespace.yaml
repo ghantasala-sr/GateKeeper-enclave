@@ -1,0 +1,6 @@
+# A4: everything in these labs lives in one namespace, so it can be removed in one go:
+#   kubectl delete namespace gatekeeper
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gatekeeper
