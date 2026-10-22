@@ -7,11 +7,8 @@ Run `python -m scripts.seed` first. Usage: python -m app.rag.ingest
 
 import asyncio
 import re
-from pathlib import Path
 
-import asyncpg
-
-from app.config import settings
+from app import db
 from app.db import set_tenant_context
 from app.rag.embeddings import embed, to_pgvector
 from scripts.seed import SEED_DIR, TENANTS, parse_front_matter
@@ -31,7 +28,7 @@ def split_sections(title: str, body: str) -> list[str]:
 
 
 async def main() -> None:
-    conn = await asyncpg.connect(settings.migration_database_url)
+    conn = await db.connect_as_owner()
     try:
         async with conn.transaction():
             for folder, (tenant_name, *_) in TENANTS.items():

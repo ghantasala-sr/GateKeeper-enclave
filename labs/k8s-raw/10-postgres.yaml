@@ -2,8 +2,7 @@
 # Its data lives in an emptyDir and is gone when the pod is. The Enclave uses
 # private Cloud SQL instead (Part B); real storage for in-cluster state is A7.
 #
-# The password is a lab value, written in plain text on purpose. A5 moves the
-# backend's settings into a ConfigMap and a Secret.
+# Its password comes from the db-owner Secret (make-secrets.sh, A5).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -24,10 +23,14 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - { name: POSTGRES_USER, value: gatekeeper_owner }
-            - { name: POSTGRES_PASSWORD, value: lab-only-owner }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: db-owner, key: POSTGRES_PASSWORD } }
             - { name: POSTGRES_DB, value: gatekeeper }
           ports:
             - containerPort: 5432
+          readinessProbe:                 # only receive traffic once it accepts connections
+            exec: { command: ["pg_isready", "-U", "gatekeeper_owner", "-d", "gatekeeper"] }
+            periodSeconds: 3
           volumeMounts:
             - { name: data, mountPath: /var/lib/postgresql/data }
       volumes:

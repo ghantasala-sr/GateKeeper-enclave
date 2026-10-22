@@ -1,0 +1,14 @@
+# A5: the backend's NON-secret settings. Safe to commit and to read with kubectl.
+# Secrets live in Secrets, created by make-secrets.sh and never written to git.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: gatekeeper
+data:
+  LLM_PROVIDER: vertex-gemini
+  VERTEX_PROJECT: ""                 # set in Part B; until then chat returns a clean 503
+  VERTEX_LOCATION: global
+  GEMINI_MODEL: gemini-3.8-flash
+  FRONTEND_URL: http://gatekeeper.enclave.internal:3000
+  TOKEN_ISSUER: http://api.enclave.internal:8000

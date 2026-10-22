@@ -7,6 +7,13 @@ from app.config import settings
 pool: asyncpg.Pool | None = None
 
 
+async def connect_as_owner() -> asyncpg.Connection:
+    """The database owner, for setup scripts only (migrate, seed, ingest, SCIM tokens)."""
+    if not settings.migration_database_url:
+        raise SystemExit("MIGRATION_DATABASE_URL is not set; only the setup scripts need it, never the API")
+    return await asyncpg.connect(settings.migration_database_url)
+
+
 async def open_pool() -> None:
     global pool
     # The limited gatekeeper_app role, never the owner (see migrations/003_app_role.sql).

@@ -6,15 +6,14 @@ Runs as the database owner (MIGRATION_DATABASE_URL). Usage: python -m scripts.mi
 import asyncio
 from pathlib import Path
 
-import asyncpg
-
+from app import db
 from app.config import settings
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
 
 
 async def main() -> None:
-    conn = await asyncpg.connect(settings.migration_database_url)
+    conn = await db.connect_as_owner()
     try:
         await conn.execute(
             """

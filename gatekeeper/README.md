@@ -377,7 +377,8 @@ they're allowed to see.
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| `GET` | `/health` | – | Liveness |
+| `GET` | `/health` | – | Liveness: the process is up (never checks the database) |
+| `GET` | `/ready` | – | Readiness: 503 unless the database answers within 2 s |
 | `GET` | `/.well-known/jwks.json` | – | Public key for Gatekeeper access tokens |
 | `GET` | `/auth/okta/login` | – | Start OIDC login (`?next=app` returns to the UI) |
 | `GET` | `/auth/okta/callback` | – | OIDC callback → access token |
@@ -474,7 +475,7 @@ All settings are read from `.env` at the repository root. See `.env.example` for
 
 | Variable | Purpose |
 |---|---|
-| `MIGRATION_DATABASE_URL` | Owner connection, used **only** by migrations, seeding and ingestion |
+| `MIGRATION_DATABASE_URL` | Owner connection, used **only** by migrations, seeding and ingestion; leave unset for the running API |
 | `APP_DATABASE_URL`, `APP_DB_PASSWORD` | The limited `gatekeeper_app` role used by the running API |
 | `OKTA_ISSUER`, `OKTA_CLIENT_ID`, `OKTA_CLIENT_SECRET` | Acme's OIDC app (issuer is pinned) |
 | `SAML_IDP_METADATA_URL`, `SAML_IDP_ENTITY_ID` | Globex's SAML IdP (entity ID is pinned) |

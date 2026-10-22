@@ -1,9 +1,8 @@
-# A4: Gatekeeper's backend as a Deployment of 2 identical pods.
+# A4/A5: Gatekeeper's backend as a Deployment of 2 identical pods.
 #
-# Settings are plain env values here so the pods start; A5 moves them into a
-# ConfigMap and a Secret, and adds health probes and resource limits.
-# SESSION_SECRET and TOKEN_SIGNING_KEY_B64 are placeholders: the backend starts
-# and serves /health, but logins need real values (A5) and Keycloak (A6).
+# Settings come from Kubernetes (A5): backend-config (ConfigMap) and
+# backend-secrets (Secret, from make-secrets.sh). The owner's password is NOT
+# here: only Postgres and the setup Job get the db-owner Secret.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -24,11 +23,24 @@ spec:
           imagePullPolicy: IfNotPresent   # use the image kind loaded; never pull
           ports:
             - containerPort: 8000
-          env:
-            - { name: APP_DATABASE_URL, value: "postgresql://gatekeeper_app:lab-only-app@postgres:5432/gatekeeper" }
-            # The app refuses to start without this, though only the setup scripts use it.
-            # The running API should never hold the owner's password: fixed in A5.
-            - { name: MIGRATION_DATABASE_URL, value: "postgresql://gatekeeper_owner:lab-only-owner@postgres:5432/gatekeeper" }
-            - { name: LLM_PROVIDER, value: vertex-gemini }
-            - { name: SESSION_SECRET, value: placeholder-until-a5 }
-            - { name: TOKEN_SIGNING_KEY_B64, value: placeholder-until-a5 }
+          envFrom:
+            - configMapRef: { name: backend-config }
+            - secretRef: { name: backend-secrets }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }   # what the scheduler reserves on a node
+            limits: { memory: 1Gi }                  # above this the container is OOMKilled
+          # Loading the embedding model takes a while: allow up to 60s before the
+          # other probes start, instead of a liveness probe killing a slow start.
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            failureThreshold: 30
+            periodSeconds: 2
+          # Can it serve? Checks the database. Failing only removes the pod from traffic.
+          readinessProbe:
+            httpGet: { path: /ready, port: 8000 }
+            periodSeconds: 5
+          # Is the process stuck? Deliberately does NOT check the database: a DB outage
+          # would otherwise restart every pod, which can't fix the DB and adds a slow start.
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 10

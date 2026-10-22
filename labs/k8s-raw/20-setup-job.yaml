@@ -16,9 +16,10 @@ spec:
           image: gatekeeper-backend:local
           imagePullPolicy: IfNotPresent
           command: ["sh", "-c", "python -m scripts.migrate && python -m scripts.seed && python -m app.rag.ingest"]
+          envFrom:
+            - secretRef: { name: db-owner }        # the owner login: setup is the only thing that gets it
           env:
-            - { name: MIGRATION_DATABASE_URL, value: "postgresql://gatekeeper_owner:lab-only-owner@postgres:5432/gatekeeper" }
-            - { name: APP_DB_PASSWORD, value: lab-only-app }
-            - { name: APP_DATABASE_URL, value: "postgresql://gatekeeper_app:lab-only-app@postgres:5432/gatekeeper" }
+            # Required by the app's settings, unused by the setup scripts.
+            - { name: APP_DATABASE_URL, value: unused-by-setup }
             - { name: SESSION_SECRET, value: unused-by-setup }
             - { name: TOKEN_SIGNING_KEY_B64, value: unused-by-setup }

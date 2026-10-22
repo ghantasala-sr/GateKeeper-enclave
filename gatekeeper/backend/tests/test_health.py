@@ -1,0 +1,59 @@
+"""Liveness vs readiness, and keeping the owner's password out of the running API.
+
+Kubernetes restarts a pod whose liveness probe fails and stops sending traffic
+to one whose readiness probe fails. A database outage must cause the second,
+never the first: restarting every pod can't fix the database.
+"""
+
+import asyncio
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app import db, main
+
+
+@pytest.fixture(scope="module")
+def client():
+    with TestClient(main.app) as c:  # runs lifespan: DB pool + embedding model
+        yield c
+
+
+def test_health_and_ready_when_all_is_well(client):
+    assert client.get("/health").json() == {"status": "ok"}
+    assert client.get("/ready").json() == {"status": "ready"}
+
+
+class BrokenPool:
+    """A pool whose database has gone away."""
+
+    def acquire(self):
+        raise OSError("connection refused")
+
+
+class HangingPool:
+    """A pool whose database accepts connections but never answers."""
+
+    def acquire(self):
+        class Conn:
+            async def __aenter__(self):
+                await asyncio.sleep(60)
+
+            async def __aexit__(self, *exc):
+                return False
+        return Conn()
+
+
+@pytest.mark.parametrize("pool", [BrokenPool(), HangingPool()])
+def test_database_outage_fails_readiness_not_liveness(client, monkeypatch, pool):
+    monkeypatch.setattr(db, "pool", pool)
+    resp = client.get("/ready")
+    assert resp.status_code == 503 and resp.json() == {"status": "database unavailable"}
+    assert client.get("/health").status_code == 200   # so Kubernetes doesn't restart the pod
+
+
+def test_api_starts_without_the_owner_password(monkeypatch):
+    """Only the setup scripts need MIGRATION_DATABASE_URL; they say so clearly when it's missing."""
+    monkeypatch.setattr(db.settings, "migration_database_url", "")
+    with pytest.raises(SystemExit, match="only the setup scripts need it"):
+        asyncio.run(db.connect_as_owner())

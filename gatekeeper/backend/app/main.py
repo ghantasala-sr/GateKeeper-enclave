@@ -1,8 +1,10 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -75,7 +77,22 @@ class ChatResponse(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    """Liveness: the process is up. Deliberately checks nothing else, so a database
+    outage makes pods stop taking traffic (/ready) instead of restarting them all."""
     return {"status": "ok"}
+
+
+@app.get("/ready")
+async def ready():
+    """Readiness: can this pod serve requests right now? Needs a working database connection."""
+    try:
+        async with asyncio.timeout(2):
+            async with db.get_pool().acquire() as conn:
+                await conn.fetchval("SELECT 1")
+    except Exception as e:  # any failure means "don't send me traffic", never a crash
+        logging.getLogger("gatekeeper").warning("not ready: %r", e)
+        return JSONResponse({"status": "database unavailable"}, status_code=503)
+    return {"status": "ready"}
 
 
 @app.get("/.well-known/jwks.json")

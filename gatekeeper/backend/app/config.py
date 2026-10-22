@@ -10,7 +10,9 @@ ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=ENV_FILE, extra="ignore")
 
-    migration_database_url: str  # owner: migrations, seed, ingest ONLY
+    # Owner: migrations, seed, ingest ONLY. Leave unset for the running API, which
+    # must never hold the owner's password; scripts fail clearly without it.
+    migration_database_url: str = ""
     app_database_url: str        # gatekeeper_app: the running app
     app_db_password: str = ""
 

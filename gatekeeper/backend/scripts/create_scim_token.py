@@ -8,9 +8,7 @@ import hashlib
 import secrets
 import sys
 
-import asyncpg
-
-from app.config import settings
+from app import db
 
 
 def hash_token(token: str) -> str:
@@ -19,7 +17,7 @@ def hash_token(token: str) -> str:
 
 async def create(tenant_name: str) -> str:
     token = "gk_scim_" + secrets.token_urlsafe(32)
-    conn = await asyncpg.connect(settings.migration_database_url)
+    conn = await db.connect_as_owner()
     try:
         updated = await conn.execute("UPDATE tenants SET scim_token_hash = $1 WHERE name = $2",
                                      hash_token(token), tenant_name)

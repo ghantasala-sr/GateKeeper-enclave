@@ -9,8 +9,7 @@ Usage: python -m scripts.seed
 import asyncio
 from pathlib import Path
 
-import asyncpg
-
+from app import db
 from app.config import settings
 from app.db import set_tenant_context
 
@@ -37,7 +36,7 @@ def parse_front_matter(text: str) -> tuple[dict[str, str], str]:
 
 
 async def main() -> None:
-    conn = await asyncpg.connect(settings.migration_database_url)
+    conn = await db.connect_as_owner()
     try:
         async with conn.transaction():
             for folder, (name, idp_type, domain, issuer) in TENANTS.items():
