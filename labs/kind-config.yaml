@@ -1,7 +1,14 @@
-# A3: a local 3-node cluster to learn on (one control plane, two workers).
+# The local cluster for the Part A labs: one control plane, two workers.
 #   kind create cluster --name enclave --config labs/kind-config.yaml
+#
+# A7: kind's built-in CNI (kindnet) ignores NetworkPolicies, so it's disabled and
+# Calico is installed instead (see labs/k8s-raw/calico.sh). Calico's default pod
+# range is 192.168.0.0/16, so the cluster uses it too.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  disableDefaultCNI: true
+  podSubnet: 192.168.0.0/16
 nodes:
   - role: control-plane
   - role: worker

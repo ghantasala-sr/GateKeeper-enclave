@@ -9,6 +9,8 @@ metadata:
 spec:
   backoffLimit: 6          # Postgres may not be ready yet; retry instead of failing
   template:
+    metadata:
+      labels: { app: setup }   # NetworkPolicies (A7) select it by this
     spec:
       restartPolicy: Never
       containers:

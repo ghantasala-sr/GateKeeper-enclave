@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# A4-A6: bring the whole lab up on the kind cluster, in order. Safe to re-run.
-# Needs the images loaded into kind and Envoy Gateway installed (see 60-gateway.yaml).
+# A4-A7: bring the whole lab up on the kind cluster, in order. Safe to re-run.
+# Needs Calico (calico.sh), the images loaded into kind, and Envoy Gateway installed
+# (see 60-gateway.yaml).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 ns=gatekeeper
 
 kubectl apply -f "$here/00-namespace.yaml"
+# The firewall goes up first, so nothing ever runs without it.
+kubectl apply -f "$here/70-network-policies.yaml"
 "$here/make-secrets.sh"
 kubectl create configmap keycloak-realms -n $ns --from-file="$repo/keycloak/realms/" \
   --dry-run=client -o yaml | kubectl apply -f -

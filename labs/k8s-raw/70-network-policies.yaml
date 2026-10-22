@@ -1,0 +1,95 @@
+# A7: the in-cluster firewall. Needs a CNI that enforces NetworkPolicies (Calico,
+# see calico.sh); kind's default CNI silently ignores them.
+#
+# Start from "nothing in or out" for every pod in the namespace, then allow
+# exactly the connections Gatekeeper makes. Policies only ADD permissions: a
+# connection is allowed if ANY policy selecting the pod allows it (OR, never AND).
+#
+#   browser ─▶ Gateway (envoy-gateway-system) ─▶ frontend:3000 / backend:8000 / keycloak:8080
+#   backend ─▶ postgres:5432, and Keycloak via the Gateway (envoy:8088)
+#   setup   ─▶ postgres:5432
+#   all     ─▶ cluster DNS
+# Nothing may reach the internet. Vertex AI egress is added on GKE (Part B, Step B9).
+#
+# Check with netpol-check.sh.
+
+# ---- 1. deny everything, both directions ----
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny, namespace: gatekeeper }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# ---- 2. DNS for everyone (forget this and everything fails in confusing ways) ----
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-dns, namespace: gatekeeper }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+# ---- 3. egress: who may call whom ----
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: backend-egress, namespace: gatekeeper }
+spec:
+  podSelector: { matchLabels: { app: backend } }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app: postgres } } }]
+      ports: [{ protocol: TCP, port: 5432 }]
+    # Keycloak is reached through the Gateway, at the same issuer URL the browser
+    # uses (coredns-rewrite.sh), so the backend talks to Envoy, not to keycloak:8080.
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: envoy-gateway-system } }
+          podSelector: { matchLabels: { gateway.envoyproxy.io/owning-gateway-name: web } }
+      ports: [{ protocol: TCP, port: 8088 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: setup-egress, namespace: gatekeeper }
+spec:
+  podSelector: { matchLabels: { app: setup } }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app: postgres } } }]
+      ports: [{ protocol: TCP, port: 5432 }]
+# Keycloak, the frontend and Postgres call nothing (DNS only), so they need no egress policy.
+---
+# ---- 4. ingress: who may be called, and by whom ----
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: postgres-ingress, namespace: gatekeeper }
+spec:
+  podSelector: { matchLabels: { app: postgres } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: backend } }
+        - podSelector: { matchLabels: { app: setup } }
+      ports: [{ protocol: TCP, port: 5432 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: from-gateway-ingress, namespace: gatekeeper }
+spec:
+  # Only the Gateway may reach the three things it routes to.
+  podSelector:
+    matchExpressions: [{ key: app, operator: In, values: [backend, frontend, keycloak] }]
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: envoy-gateway-system } }
+          podSelector: { matchLabels: { gateway.envoyproxy.io/owning-gateway-name: web } }
+      ports:
+        - { protocol: TCP, port: 8000 }   # backend
+        - { protocol: TCP, port: 3000 }   # frontend
+        - { protocol: TCP, port: 8080 }   # keycloak
