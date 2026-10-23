@@ -1,0 +1,90 @@
+# Step B9: a private GKE cluster. Nodes have no external IPs, and the control plane
+# has no public endpoint: only machines inside the VPC (the bastion) can reach it.
+
+resource "google_container_cluster" "gk" {
+  project    = var.project_id
+  name       = "enclave-gke"
+  location   = var.zone # zonal for Part B (covered by the GKE free tier); Part C goes regional
+  network    = var.network_id
+  subnetwork = var.subnet_id
+
+  deletion_protection      = false # a lab
+  remove_default_node_pool = true
+  initial_node_count       = 1
+  datapath_provider        = "ADVANCED_DATAPATH" # Dataplane V2: enforces NetworkPolicies
+
+  release_channel {
+    channel = "REGULAR"
+  }
+
+  private_cluster_config {
+    enable_private_nodes    = true
+    enable_private_endpoint = true
+    master_ipv4_cidr_block  = var.master_cidr
+  }
+
+  master_authorized_networks_config {
+    cidr_blocks {
+      cidr_block   = var.authorized_cidr
+      display_name = "enclave-main"
+    }
+  }
+
+  ip_allocation_policy {
+    cluster_secondary_range_name  = "pods"
+    services_secondary_range_name = "services"
+  }
+
+  workload_identity_config {
+    workload_pool = "${var.project_id}.svc.id.goog"
+  }
+
+  # Gateway API (the gke-l7-rilb class: an internal Application Load Balancer).
+  gateway_api_config {
+    channel = "CHANNEL_STANDARD"
+  }
+
+  # The default pool is removed right away; give it the same locked-down identity anyway.
+  node_config {
+    service_account = var.node_service_account
+    oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
+  }
+}
+
+resource "google_container_node_pool" "main" {
+  project    = var.project_id
+  name       = "main"
+  location   = var.zone
+  cluster    = google_container_cluster.gk.name
+  node_count = var.node_count
+
+  node_config {
+    machine_type    = var.machine_type
+    disk_type       = "pd-balanced"
+    disk_size_gb    = 50
+    image_type      = "COS_CONTAINERD"
+    service_account = var.node_service_account
+    oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"] # access is decided by IAM roles
+    workload_metadata_config {
+      mode = "GKE_METADATA" # pods get Workload Identity, never the node's account
+    }
+    shielded_instance_config {
+      enable_secure_boot          = true
+      enable_integrity_monitoring = true
+    }
+  }
+
+  management {
+    auto_repair  = true
+    auto_upgrade = true
+  }
+}
+
+# The backend's Kubernetes service account (namespace gatekeeper, gk-backend) may act
+# as the gk-backend Google service account: that's its Vertex AI identity.
+resource "google_service_account_iam_member" "backend_workload_identity" {
+  service_account_id = var.backend_sa_name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[${var.backend_ksa}]"
+  depends_on         = [google_container_cluster.gk] # the identity pool exists once the cluster does
+}

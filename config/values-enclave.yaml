@@ -1,0 +1,70 @@
+# The GCP Enclave, layered on helm/gatekeeper/values.yaml.
+# Values that only exist after `terraform apply` (the release tag, Cloud SQL's private
+# IP) are passed by bundle/install-from-bundle.sh with --set; everything here is fixed
+# by terraform/envs/enclave.
+
+image:
+  registry: us-central1-docker.pkg.dev/enclave-gk/gatekeeper
+  pullPolicy: IfNotPresent
+
+# Reached from an operator's laptop through an IAP tunnel to the bastion (Step B13).
+# *.localhost: browsers treat it as a secure context, so Keycloak's Secure cookies work
+# over plain HTTP until C7 adds internal HTTPS. Inside the VPC, a private Cloud DNS
+# zone points the same names at the Gateway's VIP, so the backend and the browser use
+# one issuer URL.
+publicUrls:
+  app: http://gatekeeper.localhost:8088
+  auth: http://auth.gatekeeper.localhost:8088
+
+llm:
+  provider: vertex-gemini
+  vertex:
+    project: enclave-gk
+    location: global
+    model: gemini-3.8-flash
+
+database:
+  inCluster:
+    enabled: false
+  host: ""                    # Cloud SQL's private IP: --set database.host=...
+  ownerUser: gatekeeper_owner
+
+backend:
+  serviceAccount:
+    annotations:
+      iam.gke.io/gcp-service-account: gk-backend@enclave-gk.iam.gserviceaccount.com   # Workload Identity -> Vertex AI
+
+keycloak:
+  image: us-central1-docker.pkg.dev/enclave-gk/gatekeeper/keycloak:26.2.5   # from the bundle, not quay.io
+
+gateway:
+  className: gke-l7-rilb      # GKE's internal Application Load Balancer
+  port: 8088
+  addresses:
+    - type: NamedAddress
+      value: enclave-gateway  # 10.10.0.100, reserved by Terraform
+  gkeHealthChecks: true
+
+networkPolicy:
+  # The load balancer's proxies (proxy-only subnet) and Google's health checkers.
+  gatewayPeers:
+    - ipBlock: { cidr: 10.40.0.0/23 }
+    - ipBlock: { cidr: 35.191.0.0/16 }
+    - ipBlock: { cidr: 130.211.0.0/22 }
+  # Keycloak at publicUrls.auth, i.e. the Gateway's VIP.
+  backendToAuth:
+    - to: [{ ipBlock: { cidr: 10.10.0.100/32 } }]
+      ports: [{ protocol: TCP, port: 8088 }]
+  # Cloud SQL's private range (Private Services Access).
+  databaseEgress:
+    - to: [{ ipBlock: { cidr: 10.50.0.0/16 } }]
+      ports: [{ protocol: TCP, port: 5432 }]
+  backendExtraEgress:
+    # Vertex AI, through Google's restricted API range only.
+    - to: [{ ipBlock: { cidr: 199.36.153.4/30 } }]
+      ports: [{ protocol: TCP, port: 443 }]
+    # The GKE metadata server: Workload Identity access tokens.
+    - to: [{ ipBlock: { cidr: 169.254.169.254/32 } }]
+      ports: [{ protocol: TCP, port: 80 }]
+    - to: [{ ipBlock: { cidr: 169.254.169.252/32 } }]
+      ports: [{ protocol: TCP, port: 988 }]

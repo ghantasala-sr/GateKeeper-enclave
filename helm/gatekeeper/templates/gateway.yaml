@@ -32,6 +32,9 @@ spec:
   infrastructure:
     parametersRef: { group: gateway.envoyproxy.io, kind: EnvoyProxy, name: {{ $gw }} }
   {{- end }}
+  {{- with .Values.gateway.addresses }}
+  addresses: {{- toYaml . | nindent 4 }}
+  {{- end }}
   listeners:
     - name: http
       protocol: HTTP

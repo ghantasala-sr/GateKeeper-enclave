@@ -1,0 +1,39 @@
+{{- if and .Values.gateway.enabled .Values.gateway.gkeHealthChecks }}
+# GKE's load balancer marks a backend healthy only on HTTP 200. Its default check
+# is GET / on the serving port, which the backend (404) and Keycloak (302) fail.
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: {{ include "gatekeeper.name" (dict "root" . "component" "backend") }}
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "backend") | nindent 4 }}
+spec:
+  default:
+    config:
+      type: HTTP
+      httpHealthCheck:
+        port: 8000
+        requestPath: /ready
+  targetRef:
+    group: ""
+    kind: Service
+    name: {{ include "gatekeeper.name" (dict "root" . "component" "backend") }}
+{{- if .Values.keycloak.enabled }}
+---
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: {{ include "gatekeeper.name" (dict "root" . "component" "keycloak") }}
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "keycloak") | nindent 4 }}
+spec:
+  default:
+    config:
+      type: HTTP
+      httpHealthCheck:
+        port: 9000
+        requestPath: /health/ready
+  targetRef:
+    group: ""
+    kind: Service
+    name: {{ include "gatekeeper.name" (dict "root" . "component" "keycloak") }}
+{{- end }}
+{{- end }}

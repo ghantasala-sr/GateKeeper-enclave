@@ -1,0 +1,15 @@
+# The exact release that goes into the Enclave. bundle/make-bundle.sh builds the
+# bundle from this file only; changing it is how an upgrade starts (reviewed in a PR).
+# The digests are filled in by make-bundle.sh when the images are built, and checked
+# again on the bastion before anything is pushed.
+version: 0.1.0
+platform: linux/amd64          # GKE's e2-standard nodes
+chart: helm/gatekeeper         # packaged as gatekeeper-<chart version>.tgz
+images:
+  gatekeeper-backend:  { build: docker/backend.Dockerfile }
+  gatekeeper-frontend: { build: docker/frontend.Dockerfile, args: { NEXT_PUBLIC_API_URL: /api } }
+  keycloak:            { pull: quay.io/keycloak/keycloak:26.2.5 }
+tools:                         # the bastion has no internet: everything it runs comes in the bundle
+  kubectl: v1.36.5
+  helm: v4.3.1
+  crane: v0.22.1

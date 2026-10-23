@@ -119,3 +119,26 @@ jobs:
         run: |
           helm package helm/gatekeeper -d /tmp
           tar tzf /tmp/gatekeeper-*.tgz | grep -q 'files/realms/acme-realm.json'
+
+  terraform:
+    name: Terraform (fmt, validate) and the zero-egress plan check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.5
+      - name: Format
+        run: terraform fmt -check -recursive terraform
+      - name: Validate
+        run: |
+          for dir in terraform/bootstrap terraform/envs/enclave; do
+            terraform -chdir=$dir init -backend=false -input=false >/dev/null
+            terraform -chdir=$dir validate
+          done
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Plan check catches every way out
+        run: pip install pytest && cd proof && python -m pytest -q test_check_terraform_plan.py

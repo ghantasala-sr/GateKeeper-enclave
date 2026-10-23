@@ -128,6 +128,7 @@ spec:
         - { protocol: TCP, port: 8000 }   # backend
         - { protocol: TCP, port: 3000 }   # frontend
         - { protocol: TCP, port: 8080 }   # keycloak
+        - { protocol: TCP, port: 9000 }   # keycloak's health endpoints (GKE load balancer checks)
     - from:
         - podSelector:
             matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "test") | nindent 14 }}

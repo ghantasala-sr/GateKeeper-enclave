@@ -294,6 +294,26 @@
             }
           },
           "additionalProperties": false
+        },
+        "addresses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "value"
+            ]
+          }
+        },
+        "gkeHealthChecks": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false

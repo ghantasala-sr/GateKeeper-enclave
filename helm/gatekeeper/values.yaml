@@ -78,6 +78,11 @@ gateway:
     enabled: false
     serviceName: gatekeeper-gateway
     serviceType: ClusterIP
+  # GKE: a reserved internal IP for the load balancer (a NamedAddress, created by Terraform).
+  addresses: []
+  # GKE's load balancer health-checks "/" unless told otherwise; the backend and Keycloak
+  # answer elsewhere (/ready, and /health/ready on Keycloak's management port).
+  gkeHealthChecks: false
 
 networkPolicy:
   enabled: true
