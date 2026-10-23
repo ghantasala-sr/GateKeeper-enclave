@@ -103,6 +103,22 @@ def parse(response: types.GenerateContentResponse, model: str) -> ModelReply:
     )
 
 
+def http_options() -> types.HttpOptions:
+    """Timeouts and retries for every Vertex AI call.
+
+    Gemini on Vertex AI draws on a shared (dynamic) quota that can answer 429 for a
+    moment under load; Google's guidance is to retry with exponential backoff. Only
+    429 and 503 are retried, a few times, so a real outage still fails fast as a 503.
+    """
+    return types.HttpOptions(
+        timeout=settings.vertex_timeout_seconds * 1000,
+        retry_options=types.HttpRetryOptions(
+            attempts=settings.vertex_retry_attempts, initial_delay=1.0, max_delay=8.0, exp_base=2.0,
+            jitter=1.0, http_status_codes=[429, 503],
+        ),
+    )
+
+
 class VertexGeminiModel:
     provider = PROVIDER
 
@@ -120,7 +136,7 @@ class VertexGeminiModel:
         if self._client is None:
             self._client = genai.Client(
                 vertexai=True, project=settings.vertex_project, location=settings.vertex_location,
-                http_options=types.HttpOptions(timeout=settings.vertex_timeout_seconds * 1000),
+                http_options=http_options(),
             )
         return self._client
 

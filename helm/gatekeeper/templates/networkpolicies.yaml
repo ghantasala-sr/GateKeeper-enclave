@@ -29,6 +29,10 @@ spec:
     - to:
         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
           podSelector: { matchLabels: { k8s-app: kube-dns } }
+        # GKE with NodeLocal DNSCache: queries to the kube-dns Service are redirected to
+        # the node's node-local-dns pod, so that is the peer the policy actually sees.
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: node-local-dns } }
       ports:
         - { protocol: UDP, port: 53 }
         - { protocol: TCP, port: 53 }

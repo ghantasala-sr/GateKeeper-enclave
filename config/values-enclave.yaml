@@ -44,6 +44,7 @@ gateway:
     - type: NamedAddress
       value: enclave-gateway  # 10.10.0.100, reserved by Terraform
   gkeHealthChecks: true
+  gkeBackendTimeoutSeconds: 120   # a chat answer can take several model calls with retries
 
 networkPolicy:
   # The load balancer's proxies (proxy-only subnet) and Google's health checkers.

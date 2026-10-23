@@ -10,6 +10,7 @@ data:
   VERTEX_LOCATION: {{ .Values.llm.vertex.location | quote }}
   GEMINI_MODEL: {{ .Values.llm.vertex.model | quote }}
   VERTEX_TIMEOUT_SECONDS: {{ .Values.llm.vertex.timeoutSeconds | quote }}
+  VERTEX_RETRY_ATTEMPTS: {{ .Values.llm.vertex.retryAttempts | quote }}
   FRONTEND_URL: {{ include "gatekeeper.appUrl" . | quote }}
   TOKEN_ISSUER: {{ printf "%s/api" (include "gatekeeper.appUrl" .) | quote }}
   # Acme: OIDC (the OKTA_* names are kept from the Okta setup)

@@ -37,3 +37,19 @@ spec:
     name: {{ include "gatekeeper.name" (dict "root" . "component" "keycloak") }}
 {{- end }}
 {{- end }}
+{{- if and .Values.gateway.enabled .Values.gateway.gkeBackendTimeoutSeconds }}
+---
+# The load balancer's wait for the backend's answer (GKE's default is 30s).
+apiVersion: networking.gke.io/v1
+kind: GCPBackendPolicy
+metadata:
+  name: {{ include "gatekeeper.name" (dict "root" . "component" "backend") }}
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "backend") | nindent 4 }}
+spec:
+  default:
+    timeoutSec: {{ .Values.gateway.gkeBackendTimeoutSeconds }}
+  targetRef:
+    group: ""
+    kind: Service
+    name: {{ include "gatekeeper.name" (dict "root" . "component" "backend") }}
+{{- end }}

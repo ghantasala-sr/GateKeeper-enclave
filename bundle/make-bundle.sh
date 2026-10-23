@@ -55,5 +55,6 @@ cp "$repo/bundle/install-from-bundle.sh" "$out/" && chmod +x "$out/install-from-
 mkdir -p "$out/proof" && cp "$repo/proof/prove-zero-egress.sh" "$out/proof/"
 
 (cd "$out" && find . -type f ! -name SHA256SUMS | sort | xargs shasum -a 256 > SHA256SUMS)
-(cd "$repo/dist" && tar czf "gatekeeper-bundle-$version.tgz" "gatekeeper-bundle-$version")
+# No macOS extended attributes in the archive (GNU tar on the bastion warns about them).
+(cd "$repo/dist" && COPYFILE_DISABLE=1 tar --no-xattrs -czf "gatekeeper-bundle-$version.tgz" "gatekeeper-bundle-$version")
 echo "== dist/gatekeeper-bundle-$version.tgz  $(du -h "$repo/dist/gatekeeper-bundle-$version.tgz" | cut -f1)"

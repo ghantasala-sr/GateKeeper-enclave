@@ -96,6 +96,10 @@
             "timeoutSeconds": {
               "type": "integer",
               "minimum": 1
+            },
+            "retryAttempts": {
+              "type": "integer",
+              "minimum": 1
             }
           },
           "additionalProperties": false
@@ -314,6 +318,10 @@
         },
         "gkeHealthChecks": {
           "type": "boolean"
+        },
+        "gkeBackendTimeoutSeconds": {
+          "type": "integer",
+          "minimum": 0
         }
       },
       "additionalProperties": false

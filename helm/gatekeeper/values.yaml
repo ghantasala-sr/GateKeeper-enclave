@@ -26,7 +26,8 @@ llm:
     project: ""               # "" = chat answers 503 "not configured"
     location: global
     model: gemini-3.8-flash
-    timeoutSeconds: 60
+    timeoutSeconds: 30          # per Vertex AI call
+    retryAttempts: 4            # 429/503 (shared Gemini quota), with exponential backoff
 
 secrets:
   # Each entry names an existing Secret; the keys are fixed.
@@ -83,6 +84,9 @@ gateway:
   # GKE's load balancer health-checks "/" unless told otherwise; the backend and Keycloak
   # answer elsewhere (/ready, and /health/ready on Keycloak's management port).
   gkeHealthChecks: false
+  # GKE: how long the load balancer waits for the backend (default 30s). A chat answer can
+  # take several model calls, each with retries. 0 = leave GKE's default.
+  gkeBackendTimeoutSeconds: 0
 
 networkPolicy:
   enabled: true
