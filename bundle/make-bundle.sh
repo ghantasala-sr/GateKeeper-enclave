@@ -52,6 +52,7 @@ echo "-- config and installer"
 cp "$repo/config/values-enclave.yaml" "$out/config/"
 cp "$repo/release.lock.yaml" "$out/"
 cp "$repo/bundle/install-from-bundle.sh" "$out/" && chmod +x "$out/install-from-bundle.sh"
+mkdir -p "$out/proof" && cp "$repo/proof/prove-zero-egress.sh" "$out/proof/"
 
 (cd "$out" && find . -type f ! -name SHA256SUMS | sort | xargs shasum -a 256 > SHA256SUMS)
 (cd "$repo/dist" && tar czf "gatekeeper-bundle-$version.tgz" "gatekeeper-bundle-$version")

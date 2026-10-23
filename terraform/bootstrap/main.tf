@@ -13,7 +13,13 @@ terraform {
 
 provider "google" {
   region = var.region
-  # The budget API is billed to a project; use the new one as soon as it exists.
+}
+
+# The budget API must be billed to a project; this alias bills the new one, and is
+# used only after that project exists and has the API enabled.
+provider "google" {
+  alias                 = "in_project"
+  region                = var.region
   user_project_override = true
   billing_project       = var.project_id
 }
@@ -42,6 +48,7 @@ resource "google_project_service" "bootstrap" {
 
 # Alerts by email to the billing account's admins at $10, $25, $50 and $100.
 resource "google_billing_budget" "enclave" {
+  provider        = google.in_project
   billing_account = var.billing_account
   display_name    = "Gatekeeper Enclave"
 
