@@ -17,16 +17,18 @@ metadata:
   name: {{ $name }}
   labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "keycloak") | nindent 4 }}
 spec:
-  replicas: 1     # start-dev keeps its database in the pod; more replicas need a shared DB (Part C)
+  replicas: 1     # start-dev keeps its database in the pod; more replicas need a shared DB
+  {{- include "gatekeeper.rollingUpdate" . | nindent 2 }}
   selector:
     matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "keycloak") | nindent 6 }}
   template:
     metadata:
-      labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "keycloak") | nindent 8 }}
+      labels: {{- include "gatekeeper.podLabels" (dict "root" . "component" "keycloak") | nindent 8 }}
       annotations:
         checksum/realms: {{ .Files.Glob "files/realms/*.json" | toString | sha256sum }}
     spec:
       automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ add .Values.drainSeconds 30 }}
       securityContext: {{- include "gatekeeper.podSecurityContext" . | nindent 8 }}
       containers:
         - name: keycloak
@@ -47,6 +49,7 @@ spec:
             - { name: http, containerPort: 8080 }
             - { name: management, containerPort: 9000 }
           resources: {{- toYaml .Values.keycloak.resources | nindent 12 }}
+          {{- include "gatekeeper.gracefulStop" . | nindent 10 }}
           startupProbe:
             httpGet: { path: /health/started, port: management }
             failureThreshold: 60

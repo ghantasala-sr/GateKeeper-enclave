@@ -13,7 +13,7 @@ spec:
     matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "postgres") | nindent 6 }}
   template:
     metadata:
-      labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "postgres") | nindent 8 }}
+      labels: {{- include "gatekeeper.podLabels" (dict "root" . "component" "postgres") | nindent 8 }}
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30

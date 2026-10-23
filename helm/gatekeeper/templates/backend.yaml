@@ -23,7 +23,7 @@ spec:
     matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "backend") | nindent 6 }}
   template:
     metadata:
-      labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "backend") | nindent 8 }}
+      labels: {{- include "gatekeeper.podLabels" (dict "root" . "component" "backend") | nindent 8 }}
       annotations:
         # A config change alters this hash, which changes the pod template: a rolling restart.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}

@@ -7,8 +7,12 @@ nowhere else.
 
 import time
 
-from prometheus_client import Counter, Histogram, start_http_server
+from prometheus_client import Counter, Histogram, disable_created_metrics, start_http_server
 from starlette.types import ASGIApp, Receive, Scope, Send
+
+# Only the counters themselves: no extra *_created series per metric (they double the
+# number of time series stored in Cloud Monitoring and nothing here reads them).
+disable_created_metrics()
 
 REQUESTS = Counter("gatekeeper_http_requests_total", "HTTP requests handled.", ["route", "method", "status"])
 LATENCY = Histogram("gatekeeper_http_request_duration_seconds", "Time to handle a request.", ["route", "method"],

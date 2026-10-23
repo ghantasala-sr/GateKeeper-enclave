@@ -24,6 +24,11 @@ def test_health_and_ready_when_all_is_well(client):
     assert client.get("/ready").json() == {"status": "ready"}
 
 
+def test_version_reports_the_release(client, monkeypatch):
+    monkeypatch.setattr(main.settings, "app_version", "1.2.3")
+    assert client.get("/version").json() == {"version": "1.2.3"}
+
+
 class BrokenPool:
     """A pool whose database has gone away."""
 

@@ -5,6 +5,7 @@ metadata:
   name: {{ include "gatekeeper.name" (dict "root" . "component" "backend") }}
   labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "backend") | nindent 4 }}
 data:
+  APP_VERSION: {{ .Chart.AppVersion | quote }}
   LLM_PROVIDER: {{ .Values.llm.provider | quote }}
   VERTEX_PROJECT: {{ .Values.llm.vertex.project | quote }}
   VERTEX_LOCATION: {{ .Values.llm.vertex.location | quote }}

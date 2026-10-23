@@ -21,7 +21,7 @@ spec:
   backoffLimit: 10
   template:
     metadata:
-      labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "setup") | nindent 8 }}
+      labels: {{- include "gatekeeper.podLabels" (dict "root" . "component" "setup") | nindent 8 }}
     spec:
       restartPolicy: Never
       automountServiceAccountToken: false

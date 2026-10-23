@@ -19,7 +19,17 @@ app.kubernetes.io/instance: {{ .root.Release.Name }}
 app.kubernetes.io/component: {{ .component }}
 {{- end }}
 
-{{/* All labels for one component's pods and objects. */}}
+{{/*
+Labels for a component's PODS: no version or chart label. Those change with every
+release, and a changed pod template restarts the pods; a release must only restart
+what it actually changes (Keycloak, say, keeps running through an app upgrade).
+*/}}
+{{- define "gatekeeper.podLabels" -}}
+{{ include "gatekeeper.selectorLabels" . }}
+app.kubernetes.io/part-of: gatekeeper
+{{- end }}
+
+{{/* All labels for one component's objects (not its pod templates). */}}
 {{- define "gatekeeper.componentLabels" -}}
 {{ include "gatekeeper.labels" .root }}
 app.kubernetes.io/component: {{ .component }}

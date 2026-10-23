@@ -288,6 +288,9 @@ export default function Home() {
           <section className="welcome">
             <h2>{me ? <>Good to see you, <em>{me.email.split("@")[0]}</em>.</> : "Opening your file…"}</h2>
             <p>Ask anything about {me?.tenant || "your company"}'s records. Try one of these; some may be above your clearance, and that's the point.</p>
+            {me?.last_login_at && (
+              <p className="signed-in">Signed in {new Date(me.last_login_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} through {me.idp_type === "entra_saml" ? "SAML" : "OIDC"}.</p>
+            )}
             <div className="suggestions">
               {SUGGESTIONS.map((s) => (
                 <button key={s.q} className="suggestion" onClick={() => ask(s.q)} disabled={busy}>

@@ -85,6 +85,12 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/version")
+def version() -> dict[str, str]:
+    """Which release is serving: lets an operator (or an upgrade drill) see a rollout land."""
+    return {"version": settings.app_version}
+
+
 @app.get("/ready")
 async def ready():
     """Readiness: can this pod serve requests right now? Needs a working database connection."""
