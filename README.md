@@ -2,7 +2,7 @@
 
 **Deploying [Gatekeeper](https://github.com/ghantasala-sr/GateKeeper) into a zero-egress Google Cloud environment: a private network where nothing inside can reach the public internet. Not one request.**
 
-![Status](https://img.shields.io/badge/status-in%20progress-orange)
+![Status](https://img.shields.io/badge/enclave-verified%20on%20GCP-brightgreen)
 ![Terraform](https://img.shields.io/badge/Terraform-GCP-7B42BC?logo=terraform&logoColor=white)
 ![Kubernetes](https://img.shields.io/badge/GKE-private%20cluster-326CE5?logo=kubernetes&logoColor=white)
 ![Helm](https://img.shields.io/badge/Helm-OCI%20chart-0F1689?logo=helm&logoColor=white)
@@ -12,7 +12,9 @@
 security, not the model, decides what each person can see. This repo is the deployment: the infrastructure, packaging,
 and evidence needed to run a specific Gatekeeper release inside an isolated environment, and to prove it stays isolated.
 
-> **Status:** under construction. The sections below describe the target design; the [roadmap](#roadmap) tracks what exists.
+> **Status:** the Enclave is built and verified on GCP (release 0.1.3): zero egress proven, Gatekeeper's full test
+> suite passing inside it, and Gemini answering through Google's restricted API range. Production hardening is next
+> ([roadmap](#roadmap)). The platform team's guide is [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ---
 
@@ -31,22 +33,24 @@ flowchart TB
     subgraph GCP["Enclave GCP project"]
         subgraph VPC["enclave-vpc · no route out"]
             BASTION["Bastion<br/>no external IP"]
+            GW["internal Gateway<br/>10.10.0.100"]
             subgraph GKE["GKE private cluster"]
                 FE["frontend"]
                 BE["backend<br/>Workload Identity"]
                 KC["Keycloak<br/>acme (OIDC) · globex (SAML)"]
             end
-            SQL[("Cloud SQL PostgreSQL 16<br/>private IP · pgvector")]
+            SQL[("Cloud SQL PostgreSQL 17<br/>private IP · pgvector")]
         end
         AR["Artifact Registry<br/>images + Helm chart"]
-        VERTEX["Vertex AI<br/>Gemini"]
+        VERTEX["Vertex AI<br/>Gemini 3.5 Flash"]
         OBS["Cloud Logging / Monitoring"]
     end
 
     OP["Operator laptop"] -- "IAP tunnel only" --> BASTION
+    BASTION -- "port-forward" --> GW
+    GW --> FE & BE & KC
     BASTION -- "helm install from bundle" --> GKE
     BE --> SQL
-    BE --> KC
     BE -- "restricted.googleapis.com<br/>199.36.153.4/30" --> VERTEX
     GKE -- "private Google access" --> AR
     GKE --> OBS
@@ -61,7 +65,7 @@ flowchart TB
 | **No keys** | Workload Identity for pods; no service account key files anywhere. |
 | **In-cluster firewall** | Default-deny NetworkPolicies, enforced by Dataplane V2. |
 | **Operator access** | IAP to a bastion; the cluster's API server has a private endpoint only. |
-| **Optional fence** | VPC Service Controls perimeter around the project's Google APIs. |
+| **Not yet: API fence** | A VPC Service Controls perimeter needs a Google Cloud Organization, which this project doesn't have; listed as a production requirement in [`DEPLOYMENT.md`](docs/DEPLOYMENT.md#known-limits-production-requirements). |
 
 ## How this repo relates to Gatekeeper
 
@@ -90,46 +94,44 @@ flowchart LR
 ├── helm/gatekeeper/         # the Helm chart (values-local.yaml for kind); unittests/ run in CI
 ├── release.lock.yaml        # the exact GateKeeper release to deploy
 ├── terraform/
-│   ├── modules/             # network, firewall, dns, registry, iam, cloudsql, gke, bastion, vpc-sc, monitoring
-│   └── envs/enclave/
+│   ├── bootstrap/           # project, billing, budget alerts, state bucket
+│   ├── modules/             # network, firewall, dns, iam (+ registry), secrets, cloudsql, gke, bastion
+│   └── envs/enclave/        # wires the modules together
 ├── config/
 │   └── values-enclave.yaml  # environment settings layered on the chart's defaults
-├── bundle/                  # make-bundle.sh, install-from-bundle.sh
-├── proof/                   # zero-egress test, Terraform plan policy check, k6 load tests
+├── bundle/                  # make-bundle.sh (build machine), install-from-bundle.sh (bastion)
+├── proof/                   # zero-egress proof, plan policy check, in-Enclave suite, black-box security checks
 ├── labs/                    # local Kubernetes / Helm / Terraform groundwork (kind)
 ├── docs/
-│   ├── DEPLOYMENT.md        # for the Enclave's platform team
-│   ├── RUNBOOK.md           # install, upgrade, restore, rotate, respond to alerts
-│   ├── TROUBLESHOOTING.md
-│   └── drills/              # recorded results: drain, failover, restore, upgrade, game day
-└── .github/workflows/       # app tests (both owner types), frontend build, chart lint/unit tests; later the Terraform checks
+│   └── DEPLOYMENT.md        # for the Enclave's platform team (runbook and drills come with production)
+└── .github/workflows/       # app tests (both owner types), frontend build, chart tests, Terraform fmt/validate, plan check
 ```
 
 ## Proof, not promises
 
-Each claim gets evidence a reviewer can check:
+Each claim gets evidence a reviewer can check. Results are from the Enclave on GCP, release 0.1.3:
 
-| Claim | Evidence |
-|---|---|
-| Nothing inside can reach the internet | `curl https://google.com` and `https://api.anthropic.com` time out from a pod and from the bastion, and the firewall logs show both **DENIED** |
-| The blueprint can't drift | CI reads `terraform show -json` and fails on any Cloud NAT, `0.0.0.0/0` route, external IP, public cluster endpoint, or public Cloud SQL IP |
-| Gatekeeper's security still holds | Gatekeeper's test suite runs inside the Enclave on a throwaway database, and black-box access-matrix and prompt-injection checks run against the live deployment |
-| Upgrades don't drop requests | Upgrade and rollback between bundle versions during a k6 load test, with zero failed requests |
-| Data can be recovered | A timed point-in-time restore drill against the recovery-time target |
+| Claim | Evidence | Result |
+|---|---|---|
+| Nothing inside can reach the internet | `proof/prove-zero-egress.sh` tries Google, Anthropic, Hugging Face and PyPI from the bastion, from a pod under NetworkPolicies and from a pod with none. The VPC has no route out, so to show the firewall on its own it also sends a routable-but-forbidden request, which the firewall logs as **DENIED**. | All blocked; Google APIs still work; `deny-all-egress` DENIED logged |
+| The blueprint can't drift | `proof/check_terraform_plan.py` reads `terraform show -json` and fails on any Cloud NAT, `0.0.0.0/0` route, kept default route, external IP, public GKE endpoint or nodes, or public Cloud SQL IP | 91 resources, no path out; 11 rule tests in CI |
+| Gatekeeper's security still holds | `proof/suite-in-enclave.sh` runs the full suite inside the Enclave against real Cloud SQL on a throwaway database. `proof/blackbox_check.py` signs in all six users and runs the access matrix and three prompt injections against the live app and the real model. | 258 passed, 5 skipped; 21/21, nothing outside a user's tenant or clearance retrieved |
+| Upgrades don't drop requests | Upgrade and rollback between bundle versions during a k6 load test, with zero failed requests | Production milestone |
+| Data can be recovered | A timed point-in-time restore drill against the recovery-time target | Production milestone |
 
-The first of these already runs locally. `compose/sealed-test.sh` starts the whole stack on a Docker network
-with no route out (`internal: true`), against a Cloud SQL-like owner that is neither superuser nor `BYPASSRLS`,
-with throwaway secrets generated for the run. It checks that Google, Vertex AI, Anthropic, Hugging Face and a raw
-public IP are all unreachable, that all six test users sign in through Keycloak with the right role, that chat
-returns a clean 503 (in under a second) because Vertex AI can't be reached, and that Gatekeeper's full test suite
-passes inside the sealed network.
+Before any cloud spend, the same properties were proven locally:
+
+- **`compose/sealed-test.sh`:** runs the whole stack on a Docker network with no route out, against a Cloud SQL-like
+  owner that is neither superuser nor `BYPASSRLS`. Chat returns a clean 503 there, because Vertex AI can't be reached.
+- **On kind:** with Calico enforcing NetworkPolicies, the Helm chart installs and passes `helm test`, and all six
+  users sign in through the Gateway.
 
 ## Roadmap
 
 | Milestone | Scope | Status |
 |---|---|---|
-| **Groundwork** (local, kind) | Offline-ready images, model provider interface, Keycloak for both tenants, Kubernetes manifests, NetworkPolicies, Helm chart, Terraform basics | In progress |
-| **Enclave** (GCP) | Sealed VPC, firewall, private DNS, bastion, Artifact Registry, private Cloud SQL, private GKE, offline bundle, zero-egress proof, CI plan check, `DEPLOYMENT.md` | Planned |
+| **Groundwork** (local, kind) | Offline-ready images, model provider interface, Keycloak for both tenants, Kubernetes manifests, NetworkPolicies, Helm chart, Terraform basics | Done |
+| **Enclave** (GCP) | Sealed VPC, firewall, private DNS, bastion, Artifact Registry, private Cloud SQL, private GKE, offline bundle, zero-egress proof, CI plan check, `DEPLOYMENT.md` | Done (VPC Service Controls needs an Organization) |
 | **Production** (GCP) | High availability, zero-downtime upgrades, backup and restore, observability with SLOs and an egress alert, Secret Manager CSI and key rotation, signed images and Binary Authorization, internal HTTPS Gateway, runbook and game day | Planned |
 
 ## License
