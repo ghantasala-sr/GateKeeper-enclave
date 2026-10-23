@@ -14,7 +14,7 @@ kubectl apply -f "$here/70-network-policies.yaml"
 kubectl create configmap keycloak-realms -n $ns --from-file="$repo/keycloak/realms/" \
   --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f "$here/05-backend-config.yaml" -f "$here/10-postgres.yaml" -f "$here/40-keycloak.yaml"
-kubectl rollout status deployment/postgres -n $ns --timeout=180s
+kubectl rollout status statefulset/postgres -n $ns --timeout=180s
 
 # Setup is a one-shot Job; re-create it so it runs against the current database.
 kubectl delete job setup -n $ns --ignore-not-found
