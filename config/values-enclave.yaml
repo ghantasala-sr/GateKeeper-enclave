@@ -21,7 +21,10 @@ llm:
   vertex:
     project: enclave-gk
     location: global
-    model: gemini-3.8-flash
+    # gemini-3.8-flash is reachable here only on `global` (the regional *.rep endpoints
+    # aren't served on the restricted range), and for this project it stalled (504) or
+    # was throttled (429) on most calls. gemini-3.5-flash on `global` answered reliably.
+    model: gemini-3.5-flash
 
 database:
   inCluster:

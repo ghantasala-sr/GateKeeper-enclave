@@ -2,5 +2,5 @@ apiVersion: v2
 name: gatekeeper
 description: Gatekeeper, the multi-tenant RAG assistant where the database decides what each user can see, packaged for the Enclave.
 type: application
-version: 0.1.2        # the chart
-appVersion: "0.1.2"   # the Gatekeeper images it is tested with (release.lock.yaml pins the digests)
+version: 0.1.3        # the chart
+appVersion: "0.1.3"   # the Gatekeeper images it is tested with (release.lock.yaml pins the digests)

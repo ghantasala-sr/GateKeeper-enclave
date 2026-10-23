@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     vertex_project: str = ""
     vertex_location: str = "global"
     gemini_model: str = "gemini-3.8-flash"
-    vertex_timeout_seconds: int = 30
+    vertex_timeout_seconds: int = 20     # per attempt
     vertex_retry_attempts: int = 4       # 429/503 from the shared Gemini quota, with backoff
 
     okta_issuer: str = ""

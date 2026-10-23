@@ -26,8 +26,8 @@ llm:
     project: ""               # "" = chat answers 503 "not configured"
     location: global
     model: gemini-3.8-flash
-    timeoutSeconds: 30          # per Vertex AI call
-    retryAttempts: 4            # 429/503 (shared Gemini quota), with exponential backoff
+    timeoutSeconds: 20          # per attempt of a Vertex AI call
+    retryAttempts: 4            # 429/500/503/504 (shared Gemini quota), with exponential backoff
 
 secrets:
   # Each entry names an existing Secret; the keys are fixed.

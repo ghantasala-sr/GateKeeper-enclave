@@ -150,9 +150,9 @@ def test_gemini_unreachable_with_the_real_sdk():
             system="s", turns=[Turn(role="user", text="hi")], tools=[SEARCH_TOOL]))
 
 
-def test_gemini_retries_only_quota_and_unavailable():
+def test_gemini_retries_only_transient_server_errors():
     opts = gemini.http_options()
-    assert opts.retry_options.http_status_codes == [429, 503]   # never 4xx caused by the request itself
+    assert opts.retry_options.http_status_codes == [429, 500, 503, 504]   # never a 4xx caused by the request itself
     assert opts.retry_options.attempts == gemini.settings.vertex_retry_attempts > 1
     assert opts.timeout == gemini.settings.vertex_timeout_seconds * 1000
 
