@@ -5,6 +5,8 @@
 #   ./proof/ha-drill.sh watch-failover   watch the backend through a Cloud SQL failover,
 #                                        started meanwhile from an admin's machine with
 #                                        `gcloud sql instances failover enclave-pg`
+#   ./proof/ha-drill.sh start-watch      the same plus k6, detached (for an SSH session that
+#                                        may drop): results in ~/ha-failover.log, /tmp/k6-failover.*
 #
 # Keycloak runs one dev-mode replica (its database lives in the pod), so it is still a
 # single point of failure: the drain picks a node that doesn't host it. Making Keycloak
@@ -62,5 +64,12 @@ watch-failover)
   echo "   not-ready window: ${worst}s; restarts before [$restarts_before] after [$restarts_after]"
   [ "$restarts_before" = "$restarts_after" ] && echo "PASS: recovered without restarting" || { echo "FAIL: pods restarted"; exit 1; }
   ;;
-*) sed -n '2,12p' "$0"; exit 2 ;;
+start-watch)
+  # Detached, so a dropped IAP/SSH session can't stop the drill. Never kill the watchers
+  # by a pattern that also matches this command line.
+  setsid -f bash "$0" watch-failover > ~/ha-failover.log 2>&1 < /dev/null
+  setsid -f k6 run -q -e DURATION=600s --summary-export /tmp/k6-failover.json proof/k6/availability.js > /tmp/k6-failover.log 2>&1 < /dev/null
+  sleep 3; echo "watching (log: ~/ha-failover.log); now run the failover"
+  ;;
+*) sed -n '2,14p' "$0"; exit 2 ;;
 esac
