@@ -1,5 +1,4 @@
 {{- $name := include "gatekeeper.name" (dict "root" . "component" "backend") }}
-{{- $dbUrl := printf "postgresql://gatekeeper_app:$(APP_DB_PASSWORD)@%s:%v/%s" (include "gatekeeper.dbHost" .) .Values.database.port .Values.database.name }}
 # Its own identity: on GKE, Workload Identity maps it to a Google service account for Vertex AI.
 apiVersion: v1
 kind: ServiceAccount
@@ -39,19 +38,16 @@ spec:
           image: {{ include "gatekeeper.image" (dict "root" . "component" "backend") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext: {{- include "gatekeeper.containerSecurityContext" . | nindent 12 }}
-          env:
-            - name: APP_DB_PASSWORD
-              valueFrom: { secretKeyRef: { name: {{ .Values.secrets.dbApp }}, key: APP_DB_PASSWORD } }
-            - name: APP_DATABASE_URL
-              value: {{ $dbUrl | quote }}
+          {{- include "gatekeeper.backendSecretEnv" . | nindent 10 }}
           command:
             - python
             - -c
             - |
-              import asyncio, os, sys, time
+              import asyncio, sys, time
               import asyncpg
+              from app.config import settings
               async def seeded():
-                  conn = await asyncpg.connect(os.environ["APP_DATABASE_URL"], timeout=5)
+                  conn = await asyncpg.connect(settings.app_database_url, timeout=5)
                   try:
                       return await conn.fetchval("SELECT count(*) FROM tenants") > 0
                   finally:
@@ -74,17 +70,7 @@ spec:
             {{- if .Values.metrics.enabled }}
             - { name: metrics, containerPort: 9090 }
             {{- end }}
-          envFrom:
-            - configMapRef: { name: {{ $name }} }
-            - secretRef: { name: {{ .Values.secrets.app }} }
-          env:
-            - name: APP_DB_PASSWORD
-              valueFrom: { secretKeyRef: { name: {{ .Values.secrets.dbApp }}, key: APP_DB_PASSWORD } }
-            # Kubernetes expands $(APP_DB_PASSWORD) from the line above; the URL itself is never stored.
-            - name: APP_DATABASE_URL
-              value: {{ $dbUrl | quote }}
-            - name: OKTA_CLIENT_SECRET
-              valueFrom: { secretKeyRef: { name: {{ .Values.secrets.oidcClientSecret.name }}, key: {{ .Values.secrets.oidcClientSecret.key }} } }
+          {{- include "gatekeeper.backendSecretEnv" . | nindent 10 }}
           resources: {{- toYaml .Values.backend.resources | nindent 12 }}
           {{- include "gatekeeper.gracefulStop" . | nindent 10 }}
           # Model load takes ~10s; allow up to 60s before the other probes start.
@@ -100,6 +86,9 @@ spec:
           livenessProbe:
             httpGet: { path: /health, port: http }
             periodSeconds: 10
+      {{- if eq (include "gatekeeper.secretManager" .) "true" }}
+      volumes: {{- include "gatekeeper.secretsVolume" (dict "root" . "component" "backend") | nindent 8 }}
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service

@@ -1,4 +1,22 @@
 {{- $ownerUrl := printf "postgresql://%s:$(OWNER_PASSWORD)@%s:%v/%s" .Values.database.ownerUser (include "gatekeeper.dbHost" .) .Values.database.port .Values.database.name }}
+{{- $sm := eq (include "gatekeeper.secretManager" .) "true" }}
+{{- $name := include "gatekeeper.name" (dict "root" . "component" "setup") }}
+{{- if $sm }}
+# Its own identity (Workload Identity -> gk-setup): the only workload that may read the
+# database owner's password from Secret Manager. A hook like the Job, so it exists first.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "setup") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+    {{- with .Values.setup.serviceAccount.annotations }}{{ toYaml . | nindent 4 }}{{ end }}
+automountServiceAccountToken: false
+---
+{{- end }}
 # Schema, seed data and embeddings, as the database owner. A hook, so it runs on every
 # install and upgrade (migrations are idempotent):
 #   - install: AFTER the release's objects exist (the in-cluster Postgres and the
@@ -25,6 +43,9 @@ spec:
     spec:
       restartPolicy: Never
       automountServiceAccountToken: false
+      {{- if $sm }}
+      serviceAccountName: {{ $name }}
+      {{- end }}
       securityContext: {{- include "gatekeeper.podSecurityContext" . | nindent 8 }}
       containers:
         - name: setup
@@ -35,6 +56,14 @@ spec:
           envFrom:
             - configMapRef: { name: {{ include "gatekeeper.name" (dict "root" . "component" "backend") }} }   # seed records each tenant's IdP issuer
           env:
+            {{- if $sm }}
+            # The owner login, as files from Secret Manager: only this Job ever sees it.
+            - { name: SECRETS_DIR, value: {{ .Values.secrets.secretManager.mountPath | quote }} }
+            - { name: DATABASE_HOST, value: {{ include "gatekeeper.dbHost" . | quote }} }
+            - { name: DATABASE_PORT, value: {{ .Values.database.port | quote }} }
+            - { name: DATABASE_NAME, value: {{ .Values.database.name | quote }} }
+            - { name: OWNER_USER, value: {{ .Values.database.ownerUser | quote }} }
+            {{- else }}
             # The owner login: only this Job and the in-cluster Postgres ever see it.
             - name: OWNER_PASSWORD
               valueFrom: { secretKeyRef: { name: {{ .Values.secrets.dbOwner }}, key: OWNER_PASSWORD } }
@@ -42,7 +71,13 @@ spec:
               valueFrom: { secretKeyRef: { name: {{ .Values.secrets.dbOwner }}, key: APP_DB_PASSWORD } }
             - name: MIGRATION_DATABASE_URL
               value: {{ $ownerUrl | quote }}
+            {{- end }}
             # Required by the app's settings, unused by the setup scripts.
             - { name: APP_DATABASE_URL, value: unused-by-setup }
             - { name: SESSION_SECRET, value: unused-by-setup }
             - { name: TOKEN_SIGNING_KEY_B64, value: unused-by-setup }
+          {{- if $sm }}
+          volumeMounts:
+            - { name: secrets, mountPath: {{ .Values.secrets.secretManager.mountPath | quote }}, readOnly: true }
+      volumes: {{- include "gatekeeper.secretsVolume" (dict "root" . "component" "setup") | nindent 8 }}
+          {{- end }}

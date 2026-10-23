@@ -104,3 +104,49 @@ lifecycle:
   preStop:
     exec: { command: ["sleep", "{{ .Values.drainSeconds }}"] }
 {{- end }}
+
+{{/*
+Where a component's secrets come from (values: secrets.source).
+  kubernetes:    Kubernetes Secrets (created by helm/local-secrets.sh on kind)
+  secretManager: files mounted straight from Secret Manager by GKE's CSI driver, so
+                 no Gatekeeper secret ever exists as a Kubernetes Secret object
+*/}}
+{{- define "gatekeeper.secretManager" -}}
+{{- eq .Values.secrets.source "secretManager" -}}
+{{- end }}
+
+{{/* env/envFrom (and the file mount) for the backend's containers. */}}
+{{- define "gatekeeper.backendSecretEnv" -}}
+{{- $cm := include "gatekeeper.name" (dict "root" . "component" "backend") -}}
+envFrom:
+  - configMapRef: { name: {{ $cm }} }
+{{- if eq (include "gatekeeper.secretManager" .) "true" }}
+env:
+  - { name: SECRETS_DIR, value: {{ .Values.secrets.secretManager.mountPath | quote }} }
+  - { name: DATABASE_HOST, value: {{ include "gatekeeper.dbHost" . | quote }} }
+  - { name: DATABASE_PORT, value: {{ .Values.database.port | quote }} }
+  - { name: DATABASE_NAME, value: {{ .Values.database.name | quote }} }
+volumeMounts:
+  - { name: secrets, mountPath: {{ .Values.secrets.secretManager.mountPath | quote }}, readOnly: true }
+{{- else }}
+  - secretRef: { name: {{ .Values.secrets.app }} }
+env:
+  - name: APP_DB_PASSWORD
+    valueFrom: { secretKeyRef: { name: {{ .Values.secrets.dbApp }}, key: APP_DB_PASSWORD } }
+  # Kubernetes expands $(APP_DB_PASSWORD) from the line above; the URL itself is never stored.
+  - name: APP_DATABASE_URL
+    value: {{ printf "postgresql://gatekeeper_app:$(APP_DB_PASSWORD)@%s:%v/%s" (include "gatekeeper.dbHost" .) .Values.database.port .Values.database.name | quote }}
+  - name: OKTA_CLIENT_SECRET
+    valueFrom: { secretKeyRef: { name: {{ .Values.secrets.oidcClientSecret.name }}, key: {{ .Values.secrets.oidcClientSecret.key }} } }
+{{- end }}
+{{- end }}
+
+{{/* The CSI volume for one component: its secrets (file name -> Secret Manager secret). */}}
+{{- define "gatekeeper.secretsVolume" -}}
+- name: secrets
+  csi:
+    driver: secrets-store-gke.csi.k8s.io
+    readOnly: true
+    volumeAttributes:
+      secretProviderClass: {{ include "gatekeeper.name" (dict "root" .root "component" .component) }}
+{{- end }}

@@ -28,24 +28,52 @@ ALGORITHM = "RS256"
 _bearer = HTTPBearer(auto_error=False)
 
 
+def _jwk(public_key) -> dict:
+    """The public JWK, with its RFC 7638 thumbprint as the key ID (changes when the key does)."""
+    jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(public_key))
+    thumbprint_input = json.dumps({k: jwk[k] for k in ("e", "kty", "n")}, separators=(",", ":"), sort_keys=True)
+    kid = base64.urlsafe_b64encode(hashlib.sha256(thumbprint_input.encode()).digest()).rstrip(b"=").decode()
+    jwk.update(kid=kid, alg=ALGORITHM, use="sig")
+    return jwk
+
+
+def _load_public(pem_b64: str):
+    """A previous key, given as its private or public PEM (base64): only its public half is kept."""
+    pem = base64.b64decode(pem_b64)
+    if b"PRIVATE KEY" in pem:
+        return serialization.load_pem_private_key(pem, password=None).public_key()
+    return serialization.load_pem_public_key(pem)
+
+
 @lru_cache(maxsize=1)
 def _keys():
-    """Load the private key once and derive its public JWK and key ID."""
+    """The signing key, plus every key whose tokens are still accepted.
+
+    Rotation without logging anyone out:
+      1. TOKEN_SIGNING_KEY_B64 = new key, TOKEN_VERIFY_KEYS_B64 = the old one. New tokens
+         are signed with the new key; tokens the old key signed keep working.
+      2. After TOKEN_TTL_SECONDS (every old token has expired), drop the old key.
+    Both keys are published in JWKS throughout, so anyone verifying our tokens can too.
+    """
     private_key = serialization.load_pem_private_key(base64.b64decode(settings.token_signing_key_b64), password=None)
-    public_jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(private_key.public_key()))
-    # Key ID = RFC 7638 thumbprint, so it changes automatically when the key does.
-    thumbprint_input = json.dumps({k: public_jwk[k] for k in ("e", "kty", "n")}, separators=(",", ":"), sort_keys=True)
-    kid = base64.urlsafe_b64encode(hashlib.sha256(thumbprint_input.encode()).digest()).rstrip(b"=").decode()
-    public_jwk.update(kid=kid, alg=ALGORITHM, use="sig")
-    return private_key, public_jwk
+    signing_jwk = _jwk(private_key.public_key())
+    accepted = {signing_jwk["kid"]: (private_key.public_key(), signing_jwk)}
+    # "none" (or empty) between rotations: Secret Manager can't hold an empty secret.
+    extra = "" if settings.token_verify_keys_b64.strip().lower() == "none" else settings.token_verify_keys_b64
+    for pem_b64 in filter(None, (k.strip() for k in extra.split(","))):
+        public_key = _load_public(pem_b64)
+        jwk = _jwk(public_key)
+        accepted.setdefault(jwk["kid"], (public_key, jwk))
+    return private_key, signing_jwk, accepted
 
 
 def jwks() -> dict:
-    return {"keys": [_keys()[1]]}
+    # The signing key first; verifiers pick by kid anyway.
+    return {"keys": [jwk for _, jwk in _keys()[2].values()]}
 
 
 def issue_access_token(principal: Principal) -> str:
-    private_key, public_jwk = _keys()
+    private_key, signing_jwk, _ = _keys()
     now = int(time.time())
     claims = {
         "iss": settings.token_issuer,
@@ -58,7 +86,7 @@ def issue_access_token(principal: Principal) -> str:
         "exp": now + settings.token_ttl_seconds,
         "jti": str(uuid.uuid4()),
     }
-    return jwt.encode(claims, private_key, algorithm=ALGORITHM, headers={"kid": public_jwk["kid"]})
+    return jwt.encode(claims, private_key, algorithm=ALGORITHM, headers={"kid": signing_jwk["kid"]})
 
 
 def login_response(principal: Principal) -> dict:
@@ -77,13 +105,14 @@ def _unauthorized(detail: str) -> HTTPException:
 
 
 def verify_access_token(token: str) -> dict:
-    private_key, public_jwk = _keys()
+    accepted = _keys()[2]
     try:
-        if jwt.get_unverified_header(token).get("kid") != public_jwk["kid"]:
-            raise _unauthorized("Token was not signed by this server's current key")
+        key = accepted.get(jwt.get_unverified_header(token).get("kid"))
+        if key is None:
+            raise _unauthorized("Token was not signed by a key this server accepts")
         return jwt.decode(
             token,
-            private_key.public_key(),
+            key[0],
             algorithms=[ALGORITHM],
             audience=settings.token_audience,
             issuer=settings.token_issuer,

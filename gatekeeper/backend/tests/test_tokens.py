@@ -125,7 +125,7 @@ def test_okta_id_token_is_not_an_access_token(client, acme_user):
     p = acme_user("employee")
     claims = jwt.decode(tokens.issue_access_token(p), options={"verify_signature": False})
     claims["aud"] = settings.okta_client_id or "some-other-app"
-    private_key, _ = tokens._keys()
+    private_key = tokens._keys()[0]
     assert chat(client, bearer(sign_with(private_key, claims))).status_code == 401
 
 
@@ -187,3 +187,60 @@ def test_jwks_publishes_only_the_public_key(client, acme_user):
     claims = jwt.decode(token, jwt.PyJWK(keys[0]).key, algorithms=["RS256"],
                         audience=settings.token_audience, issuer=settings.token_issuer)
     assert claims["scope"] == "docs:read"
+
+
+# ---------- signing-key rotation: nobody is logged out ----------
+
+def pem_b64(key, private=True) -> str:
+    from cryptography.hazmat.primitives import serialization as ser
+    pem = (key.private_bytes(ser.Encoding.PEM, ser.PrivateFormat.PKCS8, ser.NoEncryption()) if private
+           else key.public_key().public_bytes(ser.Encoding.PEM, ser.PublicFormat.SubjectPublicKeyInfo))
+    return base64.b64encode(pem).decode()
+
+
+@pytest.fixture
+def rotate(monkeypatch):
+    """Switch the server's keys (and reload them), the way a redeploy with new settings would."""
+    def set_keys(signing, verify=()):
+        monkeypatch.setattr(settings, "token_signing_key_b64", signing)
+        monkeypatch.setattr(settings, "token_verify_keys_b64", ",".join(verify))
+        tokens._keys.cache_clear()
+    yield set_keys
+    tokens._keys.cache_clear()
+
+
+def test_rotation_keeps_old_tokens_working_until_the_old_key_is_retired(client, acme_user, rotate):
+    new = pem_b64(rsa.generate_private_key(public_exponent=65537, key_size=2048))
+    p = acme_user("employee")
+    old_token = tokens.issue_access_token(p)
+
+    # Step 1: sign with the new key, still accept the old one (here given as its PUBLIC half only).
+    old_public = pem_b64(tokens._keys()[0], private=False)
+    rotate(new, [old_public])
+    new_token = tokens.issue_access_token(p)
+    assert jwt.get_unverified_header(new_token)["kid"] != jwt.get_unverified_header(old_token)["kid"]
+    assert chat(client, bearer(old_token)).status_code == 200      # nobody logged out
+    assert chat(client, bearer(new_token)).status_code == 200
+    kids = [k["kid"] for k in client.get("/.well-known/jwks.json").json()["keys"]]
+    assert kids[0] == jwt.get_unverified_header(new_token)["kid"] and len(kids) == 2
+
+    # Step 2: after the token lifetime, retire the old key.
+    rotate(new)
+    assert chat(client, bearer(old_token)).status_code == 401
+    assert chat(client, bearer(new_token)).status_code == 200
+    assert len(client.get("/.well-known/jwks.json").json()["keys"]) == 1
+
+
+
+def test_a_published_old_key_cannot_sign_new_tokens_for_an_attacker(client, acme_user, rotate):
+    """Accepting the old key's signatures is only safe because its private half is gone or still secret."""
+    p = acme_user("admin")
+    claims = jwt.decode(tokens.issue_access_token(p), options={"verify_signature": False})
+    stranger = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    rotate(settings.token_signing_key_b64)   # nothing extra accepted
+    assert client.get("/admin/stats", headers=bearer(sign_with(stranger, claims, kid="made-up"))).status_code == 401
+
+
+def test_none_means_no_previous_keys(client, rotate):
+    rotate(settings.token_signing_key_b64, ["none"])
+    assert len(client.get("/.well-known/jwks.json").json()["keys"]) == 1

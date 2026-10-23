@@ -44,6 +44,12 @@ resource "google_container_cluster" "gk" {
     channel = "CHANNEL_STANDARD"
   }
 
+  # Module C5: Secret Manager secrets mounted into pods as files (a CSI driver), so the
+  # app's secrets never exist as Kubernetes Secret objects.
+  secret_manager_config {
+    enabled = true
+  }
+
   # Cloud Logging and Managed Service for Prometheus: Google APIs, reached through the
   # restricted range like everything else. Nothing is sent outside Google.
   monitoring_config {
@@ -92,11 +98,21 @@ resource "google_container_node_pool" "main" {
   }
 }
 
-# The backend's Kubernetes service account (namespace gatekeeper, gk-backend) may act
-# as the gk-backend Google service account: that's its Vertex AI identity.
-resource "google_service_account_iam_member" "backend_workload_identity" {
-  service_account_id = var.backend_sa_name
+# Each Kubernetes service account may act as exactly one Google service account:
+#   gatekeeper/gk-backend -> gk-backend (Vertex AI, and its own secrets)
+#   gatekeeper/gk-setup   -> gk-setup   (the database owner's password, nothing else)
+resource "google_service_account_iam_member" "workload_identity" {
+  for_each           = var.workload_identities
+  service_account_id = each.value
   role               = "roles/iam.workloadIdentityUser"
-  member             = "serviceAccount:${var.project_id}.svc.id.goog[${var.backend_ksa}]"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[${each.key}]"
   depends_on         = [google_container_cluster.gk] # the identity pool exists once the cluster does
+}
+
+# The backend's binding used to be its own resource: same binding, new address. Without
+# this, Terraform would delete the binding after "creating" it again, cutting the
+# backend off from Vertex AI.
+moved {
+  from = google_service_account_iam_member.backend_workload_identity
+  to   = google_service_account_iam_member.workload_identity["gatekeeper/gk-backend"]
 }

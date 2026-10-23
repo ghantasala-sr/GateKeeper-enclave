@@ -62,3 +62,17 @@ def test_api_starts_without_the_owner_password(monkeypatch):
     monkeypatch.setattr(db.settings, "migration_database_url", "")
     with pytest.raises(SystemExit, match="only the setup scripts need it"):
         asyncio.run(db.connect_as_owner())
+
+
+def test_settings_from_mounted_secret_files(tmp_path, monkeypatch):
+    """GKE's Secret Manager CSI driver mounts each secret as a file; the URLs are built from parts."""
+    from app.config import Settings
+    for name, value in {"app_db_password": "p@ss/word", "owner_password": "own3r", "session_secret": "s",
+                        "token_signing_key_b64": "k"}.items():
+        (tmp_path / name).write_text(value)
+    for var in ("APP_DATABASE_URL", "MIGRATION_DATABASE_URL", "APP_DB_PASSWORD", "SESSION_SECRET", "TOKEN_SIGNING_KEY_B64"):
+        monkeypatch.delenv(var, raising=False)
+    s = Settings(_env_file=None, _secrets_dir=tmp_path, database_host="10.50.0.3")
+    assert s.app_database_url == "postgresql://gatekeeper_app:p%40ss%2Fword@10.50.0.3:5432/gatekeeper"
+    assert s.migration_database_url == "postgresql://gatekeeper_owner:own3r@10.50.0.3:5432/gatekeeper"
+    assert s.session_secret == "s"

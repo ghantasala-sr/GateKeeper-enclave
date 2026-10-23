@@ -30,6 +30,23 @@ llm:
     retryAttempts: 4            # 429/500/503/504 (shared Gemini quota), with exponential backoff
 
 secrets:
+  # kubernetes:    the Kubernetes Secrets named below (kind: helm/local-secrets.sh)
+  # secretManager: files mounted from Secret Manager by GKE's CSI driver (the Enclave);
+  #                Keycloak still uses its Kubernetes Secret (it reads env, not files)
+  source: kubernetes
+  secretManager:
+    project: ""
+    mountPath: /var/run/secrets/gatekeeper
+    # file name (= the app setting it fills) -> Secret Manager secret
+    backend:
+      app_db_password: gk-app-db-password
+      session_secret: gk-session-secret
+      token_signing_key_b64: gk-token-signing-key-b64
+      token_verify_keys_b64: gk-token-verify-keys-b64
+      okta_client_secret: gk-acme-client-secret
+    setup:
+      owner_password: gk-owner-password
+      app_db_password: gk-app-db-password
   # Each entry names an existing Secret; the keys are fixed.
   dbOwner: gatekeeper-db-owner     # OWNER_PASSWORD, APP_DB_PASSWORD   (setup Job and in-cluster Postgres only)
   dbApp: gatekeeper-db-app         # APP_DB_PASSWORD                   (backend)
@@ -51,6 +68,10 @@ database:
 
 # How long a terminating pod keeps serving while the load balancer takes it out of rotation.
 drainSeconds: 15
+
+setup:
+  serviceAccount:
+    annotations: {}               # GKE: Workload Identity, to read the owner password from Secret Manager
 
 backend:
   replicas: 2

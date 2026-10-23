@@ -99,7 +99,11 @@ module "secrets" {
   project_id       = var.project_id
   region           = var.region
   bastion_sa_email = module.iam.bastion_sa_email
-  depends_on       = [google_project_service.apis]
+  workload_sa_emails = {
+    gk-backend = module.iam.backend_sa_email
+    gk-setup   = module.iam.setup_sa_email
+  }
+  depends_on = [google_project_service.apis]
 }
 
 module "cloudsql" {
@@ -122,9 +126,12 @@ module "gke" {
   master_cidr          = var.master_cidr
   authorized_cidr      = var.ranges.main
   node_service_account = module.iam.nodes_sa_email
-  backend_sa_name      = module.iam.backend_sa_name
-  node_count           = var.ha ? 1 : var.node_count
-  node_zones           = var.ha ? ["${var.region}-a", "${var.region}-b", "${var.region}-c"] : [var.zone]
+  workload_identities = {
+    "gatekeeper/gk-backend" = module.iam.backend_sa_name
+    "gatekeeper/gk-setup"   = module.iam.setup_sa_name
+  }
+  node_count = var.ha ? 1 : var.node_count
+  node_zones = var.ha ? ["${var.region}-a", "${var.region}-b", "${var.region}-c"] : [var.zone]
   # Nodes need private DNS (Google APIs -> restricted range) from their first boot.
   depends_on = [module.dns, module.firewall]
 }

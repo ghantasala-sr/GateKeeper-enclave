@@ -140,6 +140,36 @@
             "name",
             "key"
           ]
+        },
+        "source": {
+          "enum": [
+            "kubernetes",
+            "secretManager"
+          ]
+        },
+        "secretManager": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "project": {
+              "type": "string"
+            },
+            "mountPath": {
+              "type": "string"
+            },
+            "backend": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "setup": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
         }
       },
       "additionalProperties": false,
@@ -380,6 +410,21 @@
     "drainSeconds": {
       "type": "integer",
       "minimum": 0
+    },
+    "setup": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "serviceAccount": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "annotations": {
+              "type": "object"
+            }
+          }
+        }
+      }
     }
   },
   "additionalProperties": true,

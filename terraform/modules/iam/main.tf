@@ -12,7 +12,8 @@ resource "google_artifact_registry_repository" "gatekeeper" {
 
 resource "google_service_account" "this" {
   for_each = {
-    gk-backend = "Gatekeeper backend pods (Workload Identity): Vertex AI only"
+    gk-backend = "Gatekeeper backend pods (Workload Identity): Vertex AI and the backend's secrets"
+    gk-setup   = "Gatekeeper setup Job (Workload Identity): the database owner's password only"
     gk-nodes   = "GKE nodes: pull images, write logs and metrics"
     gk-bastion = "Operator bastion: load the bundle, run kubectl/helm"
   }

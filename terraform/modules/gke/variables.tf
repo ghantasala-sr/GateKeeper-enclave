@@ -10,12 +10,9 @@ variable "authorized_cidr" {
 }
 
 variable "node_service_account" { type = string }
-variable "backend_sa_name" { type = string }
-
-variable "backend_ksa" {
-  description = "namespace/name of the backend's Kubernetes service account."
-  type        = string
-  default     = "gatekeeper/gk-backend"
+variable "workload_identities" {
+  description = "Kubernetes service account (namespace/name) -> Google service account name it may act as."
+  type        = map(string)
 }
 
 variable "node_zones" {

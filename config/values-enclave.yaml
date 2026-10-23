@@ -32,6 +32,19 @@ database:
   host: ""                    # Cloud SQL's private IP: --set database.host=...
   ownerUser: gatekeeper_owner
 
+# Module C5: the backend's and setup Job's secrets are files mounted from Secret Manager
+# (GKE's CSI driver, as each pod's own Workload Identity). None exists as a Kubernetes
+# Secret. Keycloak, which reads env, still gets its own Kubernetes Secret.
+secrets:
+  source: secretManager
+  secretManager:
+    project: enclave-gk
+
+setup:
+  serviceAccount:
+    annotations:
+      iam.gke.io/gcp-service-account: gk-setup@enclave-gk.iam.gserviceaccount.com   # the owner password, nothing else
+
 backend:
   replicas: 3                 # spread across zones and nodes; a drain or upgrade always leaves 2
   serviceAccount:

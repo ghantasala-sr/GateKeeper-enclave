@@ -42,13 +42,20 @@ kubectl config set-context enclave --cluster=enclave --user=bastion >/dev/null
 kubectl config use-context enclave >/dev/null
 kubectl get nodes --no-headers | awk '{print "   " $1, $2}'
 
-echo "== 4. secrets: Secret Manager -> Kubernetes (values never printed)"
+echo "== 4. secrets (values never printed)"
 kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 s() { gcloud secrets versions access latest --secret "gk-$1"; }
 put() { kubectl create secret generic "$@" -n $ns --dry-run=client -o yaml | kubectl apply -f - >/dev/null; echo "   secret/$1"; }
-put gatekeeper-db-owner --from-literal=OWNER_PASSWORD="$(s owner-password)" --from-literal=APP_DB_PASSWORD="$(s app-db-password)"
-put gatekeeper-db-app --from-literal=APP_DB_PASSWORD="$(s app-db-password)"
-put gatekeeper-app --from-literal=SESSION_SECRET="$(s session-secret)" --from-literal=TOKEN_SIGNING_KEY_B64="$(s token-signing-key-b64)"
+app_secrets=(gatekeeper-db-owner gatekeeper-db-app gatekeeper-app)
+if grep -q "source: secretManager" config/values-enclave.yaml; then
+  # The app's secrets are mounted from Secret Manager by the CSI driver; only Keycloak
+  # (which reads env) gets a Kubernetes Secret.
+  echo "   backend and setup: mounted from Secret Manager (no Kubernetes Secret)"
+else
+  put gatekeeper-db-owner --from-literal=OWNER_PASSWORD="$(s owner-password)" --from-literal=APP_DB_PASSWORD="$(s app-db-password)"
+  put gatekeeper-db-app --from-literal=APP_DB_PASSWORD="$(s app-db-password)"
+  put gatekeeper-app --from-literal=SESSION_SECRET="$(s session-secret)" --from-literal=TOKEN_SIGNING_KEY_B64="$(s token-signing-key-b64)"
+fi
 put gatekeeper-keycloak --from-literal=KC_BOOTSTRAP_ADMIN_PASSWORD="$(s keycloak-admin-password)" \
   --from-literal=ACME_CLIENT_SECRET="$(s acme-client-secret)" --from-literal=ACME_TEST_PASSWORD="$(s acme-test-password)" \
   --from-literal=GLOBEX_TEST_PASSWORD="$(s globex-test-password)"
@@ -59,4 +66,8 @@ helm upgrade --install $release "oci://$reg/gatekeeper" --version "$chart_versio
   -f config/values-enclave.yaml --set image.tag="$version" --set database.host="$db_host" --timeout 15m
 for d in backend frontend keycloak; do kubectl rollout status deployment/$release-$d -n $ns --timeout=10m; done
 helm test $release -n $ns --logs | grep -E "Phase|/health|/ready" | sed 's/^/   /'
+if grep -q "source: secretManager" config/values-enclave.yaml; then
+  # Serving from mounted files now: the old copies must not linger as Kubernetes Secrets.
+  kubectl delete secret "${app_secrets[@]}" -n $ns --ignore-not-found | sed 's/^/   /'
+fi
 echo "== installed gatekeeper $version"
