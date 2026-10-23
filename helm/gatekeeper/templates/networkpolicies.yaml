@@ -1,0 +1,136 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+{{- if and .Values.gateway.enabled (not $np.gatewayPeers) }}
+{{- fail "networkPolicy.gatewayPeers is required: without it nothing can reach the app (set it, or networkPolicy.enabled=false)" }}
+{{- end }}
+{{- $sel := dict "root" . }}
+# The in-cluster firewall: nothing in or out, then exactly Gatekeeper's connections.
+# Policies only add permissions (any matching policy allowing a connection allows it).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "gatekeeper.name" (dict "root" . "component" "default-deny") }}
+  labels: {{- include "gatekeeper.labels" . | nindent 4 }}
+spec:
+  # EVERY pod in the namespace, not just this release's: a pod someone else starts
+  # here (say, with a stolen kubeconfig) must get no network either.
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "gatekeeper.name" (dict "root" . "component" "allow-dns") }}
+  labels: {{- include "gatekeeper.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+# backend -> its database, Keycloak (via the Gateway), and whatever the environment adds
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "gatekeeper.name" (dict "root" . "component" "backend-egress") }}
+  labels: {{- include "gatekeeper.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "backend") | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    {{- if .Values.database.inCluster.enabled }}
+    - to:
+        - podSelector:
+            matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "postgres") | nindent 14 }}
+      ports: [{ protocol: TCP, port: 5432 }]
+    {{- end }}
+    {{- with $np.databaseEgress }}{{ toYaml . | nindent 4 }}{{ end }}
+    {{- with $np.backendToAuth }}{{ toYaml . | nindent 4 }}{{ end }}
+    {{- with $np.backendExtraEgress }}{{ toYaml . | nindent 4 }}{{ end }}
+---
+# setup Job -> its database only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "gatekeeper.name" (dict "root" . "component" "setup-egress") }}
+  labels: {{- include "gatekeeper.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "setup") | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    {{- if .Values.database.inCluster.enabled }}
+    - to:
+        - podSelector:
+            matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "postgres") | nindent 14 }}
+      ports: [{ protocol: TCP, port: 5432 }]
+    {{- end }}
+    {{- with $np.databaseEgress }}{{ toYaml . | nindent 4 }}{{ end }}
+---
+# helm test pod -> backend only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "gatekeeper.name" (dict "root" . "component" "test-egress") }}
+  labels: {{- include "gatekeeper.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "test") | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "backend") | nindent 14 }}
+      ports: [{ protocol: TCP, port: 8000 }]
+{{- if .Values.database.inCluster.enabled }}
+---
+# postgres accepts only the backend and the setup Job
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "gatekeeper.name" (dict "root" . "component" "postgres-ingress") }}
+  labels: {{- include "gatekeeper.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "postgres") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "backend") | nindent 14 }}
+        - podSelector:
+            matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "setup") | nindent 14 }}
+      ports: [{ protocol: TCP, port: 5432 }]
+{{- end }}
+{{- if .Values.gateway.enabled }}
+---
+# backend, frontend and keycloak accept only the Gateway (and the backend, the helm test pod)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "gatekeeper.name" (dict "root" . "component" "from-gateway") }}
+  labels: {{- include "gatekeeper.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/instance, operator: In, values: [{{ .Release.Name }}] }
+      - { key: app.kubernetes.io/component, operator: In, values: [backend, frontend, keycloak] }
+  policyTypes: [Ingress]
+  ingress:
+    - from: {{- toYaml $np.gatewayPeers | nindent 8 }}
+      ports:
+        - { protocol: TCP, port: 8000 }   # backend
+        - { protocol: TCP, port: 3000 }   # frontend
+        - { protocol: TCP, port: 8080 }   # keycloak
+    - from:
+        - podSelector:
+            matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "test") | nindent 14 }}
+      ports: [{ protocol: TCP, port: 8000 }]
+{{- end }}
+{{- end }}

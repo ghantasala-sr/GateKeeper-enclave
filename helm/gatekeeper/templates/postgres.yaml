@@ -1,0 +1,71 @@
+{{- if .Values.database.inCluster.enabled }}
+{{- $name := include "gatekeeper.name" (dict "root" . "component" "postgres") }}
+# Lab only (kind): Postgres as a StatefulSet with its own disk. The Enclave uses Cloud SQL.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "postgres") | nindent 4 }}
+spec:
+  serviceName: {{ $name }}-headless
+  replicas: 1
+  selector:
+    matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "postgres") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "postgres") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: postgres
+          image: {{ .Values.database.inCluster.image }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - { name: POSTGRES_USER, value: {{ .Values.database.ownerUser | quote }} }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secrets.dbOwner }}, key: OWNER_PASSWORD } }
+            - { name: POSTGRES_DB, value: {{ .Values.database.name | quote }} }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports:
+            - { name: postgres, containerPort: 5432 }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", {{ .Values.database.ownerUser | quote }}, "-d", {{ .Values.database.name | quote }}] }
+            periodSeconds: 3
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.database.inCluster.storageClassName }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests: { storage: {{ .Values.database.inCluster.storage }} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "postgres") | nindent 4 }}
+spec:
+  selector: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "postgres") | nindent 4 }}
+  ports:
+    - { name: postgres, port: 5432, targetPort: postgres }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-headless
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "postgres") | nindent 4 }}
+spec:
+  clusterIP: None
+  selector: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "postgres") | nindent 4 }}
+  ports:
+    - { name: postgres, port: 5432 }
+{{- end }}

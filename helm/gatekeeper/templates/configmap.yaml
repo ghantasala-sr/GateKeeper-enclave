@@ -1,0 +1,22 @@
+# The backend's non-secret settings. Changing them restarts the backend (checksum annotation).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gatekeeper.name" (dict "root" . "component" "backend") }}
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "backend") | nindent 4 }}
+data:
+  LLM_PROVIDER: {{ .Values.llm.provider | quote }}
+  VERTEX_PROJECT: {{ .Values.llm.vertex.project | quote }}
+  VERTEX_LOCATION: {{ .Values.llm.vertex.location | quote }}
+  GEMINI_MODEL: {{ .Values.llm.vertex.model | quote }}
+  VERTEX_TIMEOUT_SECONDS: {{ .Values.llm.vertex.timeoutSeconds | quote }}
+  FRONTEND_URL: {{ include "gatekeeper.appUrl" . | quote }}
+  TOKEN_ISSUER: {{ printf "%s/api" (include "gatekeeper.appUrl" .) | quote }}
+  # Acme: OIDC (the OKTA_* names are kept from the Okta setup)
+  OKTA_ISSUER: {{ printf "%s/realms/acme" (include "gatekeeper.authUrl" .) | quote }}
+  OKTA_CLIENT_ID: gatekeeper
+  OKTA_REDIRECT_URI: {{ printf "%s/api/auth/okta/callback" (include "gatekeeper.appUrl" .) | quote }}
+  # Globex: SAML
+  SAML_IDP_METADATA_URL: {{ printf "%s/realms/globex/protocol/saml/descriptor" (include "gatekeeper.authUrl" .) | quote }}
+  SAML_IDP_ENTITY_ID: {{ printf "%s/realms/globex" (include "gatekeeper.authUrl" .) | quote }}
+  SAML_SP_ACS_URL: {{ printf "%s/api/auth/saml/acs" (include "gatekeeper.appUrl" .) | quote }}

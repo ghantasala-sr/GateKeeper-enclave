@@ -1,0 +1,62 @@
+suite: what changes between kind and the Enclave
+release:
+  name: gk   # as installed (helm/local-up.sh)
+values:
+  - ../values-local.yaml
+templates:
+  - postgres.yaml
+  - backend.yaml
+  - configmap.yaml
+  - keycloak.yaml
+  - gateway.yaml
+tests:
+  - it: with an external database (Cloud SQL), renders no Postgres and connects to its host
+    set:
+      database.inCluster.enabled: false
+      database.host: 10.20.0.3
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: postgres.yaml
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: APP_DATABASE_URL
+            value: "postgresql://gatekeeper_app:$(APP_DB_PASSWORD)@10.20.0.3:5432/gatekeeper"
+        template: backend.yaml
+        documentSelector:
+          path: kind
+          value: Deployment
+
+  - it: insists on a database host when Postgres isn't in the cluster
+    template: backend.yaml
+    set:
+      database.inCluster.enabled: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "database.host is required when database.inCluster.enabled is false"
+
+  - it: with its own IdP (keycloak.enabled=false), renders no Keycloak and no auth route
+    set:
+      keycloak.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: keycloak.yaml
+      - hasDocuments:
+          count: 3   # EnvoyProxy, Gateway, the app HTTPRoute
+        template: gateway.yaml
+
+  - it: renders no EnvoyProxy on GKE's managed Gateway
+    template: gateway.yaml
+    set:
+      gateway.className: gke-l7-rilb
+      gateway.envoyProxy.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 3   # Gateway and the two HTTPRoutes
+      - notExists:
+          path: spec.infrastructure
+        documentSelector:
+          path: kind
+          value: Gateway

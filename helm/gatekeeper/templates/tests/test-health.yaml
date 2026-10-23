@@ -1,0 +1,29 @@
+# `helm test <release>`: after an install or upgrade, the backend must be ready
+# (process up AND database reachable). Uses the backend image, so it works offline.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "gatekeeper.name" (dict "root" . "component" "test") }}
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "test") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext: {{- include "gatekeeper.podSecurityContext" . | nindent 4 }}
+  containers:
+    - name: ready
+      image: {{ include "gatekeeper.image" (dict "root" . "component" "backend") }}
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      securityContext: {{- include "gatekeeper.containerSecurityContext" . | nindent 8 }}
+      command:
+        - python
+        - -c
+        - |
+          import json, urllib.request
+          base = "http://{{ include "gatekeeper.name" (dict "root" . "component" "backend") }}:8000"
+          for path, want in (("/health", {"status": "ok"}), ("/ready", {"status": "ready"})):
+              got = json.load(urllib.request.urlopen(base + path, timeout=10))
+              assert got == want, f"{path}: {got}"
+              print(f"{path}: {got}")

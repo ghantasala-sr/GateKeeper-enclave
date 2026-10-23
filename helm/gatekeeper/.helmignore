@@ -1,0 +1,5 @@
+# Not part of the packaged chart.
+# (Not "tests/": that would also drop templates/tests, the helm test hook.)
+unittests/
+*.tgz
+.DS_Store

@@ -1,0 +1,42 @@
+{{- $name := include "gatekeeper.name" (dict "root" . "component" "frontend") }}
+# Built with NEXT_PUBLIC_API_URL=/api: the browser calls the API on the frontend's own
+# origin and the Gateway routes /api to the backend, so one image fits every environment.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "frontend") | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "frontend") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "frontend") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {{- include "gatekeeper.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: frontend
+          image: {{ include "gatekeeper.image" (dict "root" . "component" "frontend") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- include "gatekeeper.containerSecurityContext" . | nindent 12 }}
+          ports:
+            - { name: http, containerPort: 3000 }
+          resources: {{- toYaml .Values.frontend.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "frontend") | nindent 4 }}
+spec:
+  selector: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "frontend") | nindent 4 }}
+  ports:
+    - { name: http, port: 3000, targetPort: http }

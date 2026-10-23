@@ -27,6 +27,7 @@ WORKDIR /app
 # The standalone output contains the server and only the node_modules it needs.
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
-USER node
+# Numeric (node is uid 1000): Kubernetes' runAsNonRoot can only verify a numeric user.
+USER 1000
 EXPOSE 3000
 CMD ["node", "server.js"]

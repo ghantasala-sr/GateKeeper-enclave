@@ -87,6 +87,7 @@ flowchart LR
 ├── docker/                  # Dockerfiles (+ per-Dockerfile .dockerignore), built with gatekeeper/ as the context
 ├── compose/                 # local stand-ins: Postgres with a Cloud SQL-like (non-superuser) owner, the sealed test
 ├── keycloak/                # realm imports: acme (OIDC, gk- groups) and globex (SAML); check_logins.py signs in all six
+├── helm/gatekeeper/         # the Helm chart (values-local.yaml for kind); unittests/ run in CI
 ├── release.lock.yaml        # the exact GateKeeper release to deploy
 ├── terraform/
 │   ├── modules/             # network, firewall, dns, registry, iam, cloudsql, gke, bastion, vpc-sc, monitoring
@@ -101,7 +102,7 @@ flowchart LR
 │   ├── RUNBOOK.md           # install, upgrade, restore, rotate, respond to alerts
 │   ├── TROUBLESHOOTING.md
 │   └── drills/              # recorded results: drain, failover, restore, upgrade, game day
-└── .github/workflows/       # terraform fmt/validate and the plan policy check
+└── .github/workflows/       # app tests (both owner types), frontend build, chart lint/unit tests; later the Terraform checks
 ```
 
 ## Proof, not promises

@@ -1,0 +1,54 @@
+suite: configuration and fail-fast values
+release:
+  name: gk   # as installed (helm/local-up.sh)
+values:
+  - ../values-local.yaml
+templates:
+  - backend.yaml
+  - configmap.yaml
+tests:
+  - it: refuses to render without a release tag
+    template: backend.yaml
+    set:
+      image.tag: ""
+    asserts:
+      - failedTemplate:
+          errorMessage: "image.tag is required (the Gatekeeper release to deploy)"
+
+  - it: restarts the backend when its config changes
+    template: backend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/config"]
+
+  - it: builds every login URL from the public URLs
+    template: configmap.yaml
+    asserts:
+      - equal:
+          path: data.OKTA_ISSUER
+          value: http://auth.gatekeeper.localhost:8088/realms/acme
+      - equal:
+          path: data.OKTA_REDIRECT_URI
+          value: http://gatekeeper.localhost:8088/api/auth/okta/callback
+      - equal:
+          path: data.SAML_SP_ACS_URL
+          value: http://gatekeeper.localhost:8088/api/auth/saml/acs
+      - equal:
+          path: data.TOKEN_ISSUER
+          value: http://gatekeeper.localhost:8088/api
+
+  - it: uses the registry when one is set (Artifact Registry in the Enclave)
+    template: backend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      image.registry: us-central1-docker.pkg.dev/enclave-gk/gatekeeper
+      image.tag: "1.0.0"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: us-central1-docker.pkg.dev/enclave-gk/gatekeeper/gatekeeper-backend:1.0.0

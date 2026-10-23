@@ -1,0 +1,343 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "Gatekeeper chart values",
+  "type": "object",
+  "properties": {
+    "image": {
+      "type": "object",
+      "properties": {
+        "registry": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "enum": [
+            "IfNotPresent",
+            "Always",
+            "Never"
+          ]
+        },
+        "backend": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "repository"
+          ]
+        },
+        "frontend": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "repository"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "backend",
+        "frontend"
+      ]
+    },
+    "publicUrls": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "type": "string",
+          "pattern": "^https?://[^/]+$",
+          "description": "scheme://host[:port], no path"
+        },
+        "auth": {
+          "type": "string",
+          "pattern": "^https?://[^/]+$",
+          "description": "scheme://host[:port], no path"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "app",
+        "auth"
+      ]
+    },
+    "llm": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "enum": [
+            "vertex-gemini",
+            "anthropic"
+          ],
+          "description": "the Enclave uses vertex-gemini only"
+        },
+        "vertex": {
+          "type": "object",
+          "properties": {
+            "project": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "timeoutSeconds": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider"
+      ]
+    },
+    "secrets": {
+      "type": "object",
+      "properties": {
+        "dbOwner": {
+          "type": "string"
+        },
+        "dbApp": {
+          "type": "string"
+        },
+        "app": {
+          "type": "string"
+        },
+        "keycloak": {
+          "type": "string"
+        },
+        "oidcClientSecret": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "key"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "dbOwner",
+        "dbApp",
+        "app",
+        "oidcClientSecret"
+      ]
+    },
+    "database": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer"
+        },
+        "ownerUser": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "inCluster": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "image": {
+              "type": "string"
+            },
+            "storage": {
+              "type": "string"
+            },
+            "storageClassName": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "port",
+        "ownerUser"
+      ]
+    },
+    "backend": {
+      "type": "object",
+      "properties": {
+        "replicas": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resources": {
+          "type": "object",
+          "properties": {
+            "requests": {
+              "type": "object"
+            },
+            "limits": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "serviceAccount": {
+          "type": "object",
+          "properties": {
+            "annotations": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "frontend": {
+      "type": "object",
+      "properties": {
+        "replicas": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resources": {
+          "type": "object",
+          "properties": {
+            "requests": {
+              "type": "object"
+            },
+            "limits": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "keycloak": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "type": "string"
+        },
+        "resources": {
+          "type": "object",
+          "properties": {
+            "requests": {
+              "type": "object"
+            },
+            "limits": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "gateway": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "className": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer"
+        },
+        "envoyProxy": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "serviceName": {
+              "type": "string"
+            },
+            "serviceType": {
+              "enum": [
+                "ClusterIP",
+                "LoadBalancer",
+                "NodePort"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "networkPolicy": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "gatewayPeers": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "backendToAuth": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "databaseEgress": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "backendExtraEgress": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true,
+  "required": [
+    "image",
+    "publicUrls",
+    "llm",
+    "secrets",
+    "database"
+  ]
+}

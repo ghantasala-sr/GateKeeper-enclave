@@ -1,0 +1,45 @@
+{{- $ownerUrl := printf "postgresql://%s:$(OWNER_PASSWORD)@%s:%v/%s" .Values.database.ownerUser (include "gatekeeper.dbHost" .) .Values.database.port .Values.database.name }}
+# Schema, seed data and embeddings, as the database owner. A hook, so it runs on every
+# install and upgrade (migrations are idempotent), after the release's objects exist:
+# the in-cluster Postgres and the ConfigMap it reads. The Job retries until the
+# database accepts connections; the backend waits for it in an init container.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "gatekeeper.name" (dict "root" . "component" "setup") }}
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "setup") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    # Delete the previous run before creating this one (a Job's template can't be changed),
+    # and clean up after success. A failed Job is kept so its logs can be read.
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "setup") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext: {{- include "gatekeeper.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: setup
+          image: {{ include "gatekeeper.image" (dict "root" . "component" "backend") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- include "gatekeeper.containerSecurityContext" . | nindent 12 }}
+          command: ["sh", "-c", "python -m scripts.migrate && python -m scripts.seed && python -m app.rag.ingest"]
+          envFrom:
+            - configMapRef: { name: {{ include "gatekeeper.name" (dict "root" . "component" "backend") }} }   # seed records each tenant's IdP issuer
+          env:
+            # The owner login: only this Job and the in-cluster Postgres ever see it.
+            - name: OWNER_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secrets.dbOwner }}, key: OWNER_PASSWORD } }
+            - name: APP_DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secrets.dbOwner }}, key: APP_DB_PASSWORD } }
+            - name: MIGRATION_DATABASE_URL
+              value: {{ $ownerUrl | quote }}
+            # Required by the app's settings, unused by the setup scripts.
+            - { name: APP_DATABASE_URL, value: unused-by-setup }
+            - { name: SESSION_SECRET, value: unused-by-setup }
+            - { name: TOKEN_SIGNING_KEY_B64, value: unused-by-setup }

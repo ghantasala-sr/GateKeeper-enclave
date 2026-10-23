@@ -1,0 +1,92 @@
+# Gatekeeper chart defaults. Environment files layer on top of this:
+#   values-local.yaml          kind (helm/gatekeeper/values-local.yaml)
+#   config/values-enclave.yaml the GCP Enclave
+#
+# No secret ever goes in a values file. The chart only REFERENCES Secrets that
+# already exist in the namespace (see `secrets` below): locally they come from
+# helm/local-secrets.sh, in the Enclave from Secret Manager.
+
+image:
+  registry: ""          # e.g. us-central1-docker.pkg.dev/enclave-gk/gatekeeper; "" = images loaded straight onto the nodes (kind)
+  tag: ""               # REQUIRED: the Gatekeeper release to deploy
+  pullPolicy: IfNotPresent
+  backend: { repository: gatekeeper-backend }
+  frontend: { repository: gatekeeper-frontend }
+
+# What users type into the browser. Every login redirect, the token issuer and
+# Keycloak's own hostname are built from these, so the browser and the backend
+# always agree on them.
+publicUrls:
+  app: ""               # REQUIRED: the frontend; the API is served under <app>/api
+  auth: ""              # REQUIRED: Keycloak
+
+llm:
+  provider: vertex-gemini     # the Enclave's only model
+  vertex:
+    project: ""               # "" = chat answers 503 "not configured"
+    location: global
+    model: gemini-3.8-flash
+    timeoutSeconds: 60
+
+secrets:
+  # Each entry names an existing Secret; the keys are fixed.
+  dbOwner: gatekeeper-db-owner     # OWNER_PASSWORD, APP_DB_PASSWORD   (setup Job and in-cluster Postgres only)
+  dbApp: gatekeeper-db-app         # APP_DB_PASSWORD                   (backend)
+  app: gatekeeper-app              # SESSION_SECRET, TOKEN_SIGNING_KEY_B64 (backend)
+  keycloak: gatekeeper-keycloak    # KC_BOOTSTRAP_ADMIN_PASSWORD, ACME_CLIENT_SECRET, ACME_TEST_PASSWORD, GLOBEX_TEST_PASSWORD
+  # The acme OIDC client secret the backend presents to the IdP.
+  oidcClientSecret: { name: gatekeeper-keycloak, key: ACME_CLIENT_SECRET }
+
+database:
+  name: gatekeeper
+  port: 5432
+  ownerUser: gatekeeper_owner     # Cloud SQL: the user Terraform creates
+  host: ""                        # external database (Cloud SQL private IP); ignored when inCluster.enabled
+  inCluster:
+    enabled: false                # true = a lab-only Postgres StatefulSet (kind)
+    image: pgvector/pgvector:pg17
+    storage: 1Gi
+    storageClassName: ""          # "" = the cluster's default StorageClass
+
+backend:
+  replicas: 2
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 1Gi }
+  serviceAccount:
+    annotations: {}               # GKE: iam.gke.io/gcp-service-account for Workload Identity (Vertex AI)
+
+frontend:
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 256Mi }
+
+keycloak:
+  enabled: true                   # false = the environment brings its own IdP
+  image: quay.io/keycloak/keycloak:26.2.5
+  resources:
+    requests: { cpu: 250m, memory: 768Mi }
+    limits: { memory: 1536Mi }
+
+gateway:
+  enabled: true
+  className: ""                   # REQUIRED when enabled: "envoy" on kind, "gke-l7-rilb" (internal) on GKE
+  port: 80
+  # Envoy Gateway only: a fixed name for Envoy's Service (kind's CoreDNS rewrite points at it).
+  envoyProxy:
+    enabled: false
+    serviceName: gatekeeper-gateway
+    serviceType: ClusterIP
+
+networkPolicy:
+  enabled: true
+  # Where the Gateway's proxies run, so only they may reach backend/frontend/keycloak.
+  # Envoy Gateway: its pods. GKE's managed Gateway: the proxy-only subnet (ipBlock).
+  gatewayPeers: []
+  # How the backend reaches Keycloak at publicUrls.auth (through the Gateway).
+  backendToAuth: []
+  # How the backend and setup Job reach an external database (Cloud SQL private IP range).
+  databaseEgress: []
+  # Anything else the backend may call (GKE: Google APIs' restricted VIP for Vertex AI).
+  backendExtraEgress: []

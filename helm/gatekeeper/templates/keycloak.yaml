@@ -1,0 +1,75 @@
+{{- if .Values.keycloak.enabled }}
+{{- $name := include "gatekeeper.name" (dict "root" . "component" "keycloak") }}
+# Both realms, from keycloak/realms/ (files/realms is a link to it; `helm package` copies them in).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-realms
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "keycloak") | nindent 4 }}
+data:
+  {{- range $path, $_ := .Files.Glob "files/realms/*.json" }}
+  {{ base $path }}: |- {{- $.Files.Get $path | nindent 4 }}
+  {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "keycloak") | nindent 4 }}
+spec:
+  replicas: 1     # start-dev keeps its database in the pod; more replicas need a shared DB (Part C)
+  selector:
+    matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "keycloak") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "keycloak") | nindent 8 }}
+      annotations:
+        checksum/realms: {{ .Files.Glob "files/realms/*.json" | toString | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {{- include "gatekeeper.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: keycloak
+          image: {{ .Values.keycloak.image }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- include "gatekeeper.containerSecurityContext" . | nindent 12 }}
+          args: ["start-dev", "--import-realm"]
+          envFrom:
+            - secretRef: { name: {{ .Values.secrets.keycloak }} }
+          env:
+            - { name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin }
+            - { name: KC_HOSTNAME, value: {{ include "gatekeeper.authUrl" . | quote }} }   # the issuer, for browser and backend alike
+            - { name: KC_HEALTH_ENABLED, value: "true" }
+            # Substituted into the realm files at import.
+            - { name: GATEKEEPER_API_URL, value: {{ printf "%s/api" (include "gatekeeper.appUrl" .) | quote }} }
+            - { name: GATEKEEPER_FRONTEND_URL, value: {{ include "gatekeeper.appUrl" . | quote }} }
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: management, containerPort: 9000 }
+          resources: {{- toYaml .Values.keycloak.resources | nindent 12 }}
+          startupProbe:
+            httpGet: { path: /health/started, port: management }
+            failureThreshold: 60
+            periodSeconds: 3
+          readinessProbe:
+            httpGet: { path: /health/ready, port: management }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health/live, port: management }
+            periodSeconds: 10
+          volumeMounts:
+            - { name: realms, mountPath: /opt/keycloak/data/import, readOnly: true }
+      volumes:
+        - name: realms
+          configMap: { name: {{ $name }}-realms }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "keycloak") | nindent 4 }}
+spec:
+  selector: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "keycloak") | nindent 4 }}
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+{{- end }}

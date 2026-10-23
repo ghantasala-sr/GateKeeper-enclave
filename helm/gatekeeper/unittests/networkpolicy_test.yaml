@@ -1,0 +1,62 @@
+suite: the in-cluster firewall
+release:
+  name: gk   # as installed (helm/local-up.sh)
+values:
+  - ../values-local.yaml
+templates:
+  - networkpolicies.yaml
+tests:
+  - it: denies everything for EVERY pod in the namespace, not just this release's
+    documentSelector:
+      path: metadata.name
+      value: gk-default-deny
+    asserts:
+      - equal:
+          path: spec.podSelector
+          value: {}
+      - equal:
+          path: spec.policyTypes
+          value: [Ingress, Egress]
+
+  - it: lets the backend out only to its database and Keycloak by default (no internet)
+    documentSelector:
+      path: metadata.name
+      value: gk-backend-egress
+    asserts:
+      - lengthEqual:
+          path: spec.egress
+          count: 2
+      - notExists:
+          path: spec.egress[0].to[0].ipBlock
+      - notExists:
+          path: spec.egress[1].to[0].ipBlock
+
+  - it: adds the Enclave's extra egress (Google APIs' restricted VIP for Vertex AI)
+    documentSelector:
+      path: metadata.name
+      value: gk-backend-egress
+    set:
+      networkPolicy.backendExtraEgress:
+        - to:
+            - ipBlock:
+                cidr: 199.36.153.4/30
+          ports:
+            - protocol: TCP
+              port: 443
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            to:
+              - ipBlock:
+                  cidr: 199.36.153.4/30
+            ports:
+              - protocol: TCP
+                port: 443
+
+  - it: refuses to render a firewall that would let nothing reach the app
+    set:
+      networkPolicy.gatewayPeers: []
+    asserts:
+      - failedTemplate:
+          errorMessage: "networkPolicy.gatewayPeers is required: without it nothing can reach the app (set it, or networkPolicy.enabled=false)"

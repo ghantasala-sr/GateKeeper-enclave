@@ -1,0 +1,33 @@
+# kind: images loaded straight onto the nodes, a lab Postgres in the cluster, Envoy Gateway,
+# and *.localhost names (browsers treat them as secure, so Keycloak's cookies work over HTTP).
+#   helm/local-up.sh
+image:
+  tag: local
+
+publicUrls:
+  app: http://gatekeeper.localhost:8088
+  auth: http://auth.gatekeeper.localhost:8088
+
+database:
+  inCluster:
+    enabled: true
+    storageClassName: standard
+
+gateway:
+  className: envoy
+  port: 8088
+  envoyProxy:
+    enabled: true
+    serviceName: gatekeeper-gateway   # CoreDNS sends the public names here inside the cluster
+
+networkPolicy:
+  # Envoy Gateway's proxy pods for this release's Gateway
+  gatewayPeers:
+    - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: envoy-gateway-system } }
+      podSelector: { matchLabels: { gateway.envoyproxy.io/owning-gateway-name: gk-gateway } }
+  # The backend reaches Keycloak at publicUrls.auth, i.e. through those same proxies
+  backendToAuth:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: envoy-gateway-system } }
+          podSelector: { matchLabels: { gateway.envoyproxy.io/owning-gateway-name: gk-gateway } }
+      ports: [{ protocol: TCP, port: 8088 }]

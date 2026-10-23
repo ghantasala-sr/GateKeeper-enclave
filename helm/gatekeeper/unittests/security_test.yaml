@@ -1,0 +1,86 @@
+suite: security rules that must hold in every environment
+release:
+  name: gk   # as installed (helm/local-up.sh)
+values:
+  - ../values-local.yaml
+templates:
+  - backend.yaml
+  - frontend.yaml
+  - keycloak.yaml
+  - setup-job.yaml
+  - configmap.yaml   # backend.yaml hashes it
+tests:
+  - it: runs every Gatekeeper workload as non-root, with no privilege escalation
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+        documentSelector:
+          path: kind
+          value: Deployment
+          matchMany: true
+          skipEmptyTemplates: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+        documentSelector:
+          path: kind
+          value: Deployment
+          matchMany: true
+          skipEmptyTemplates: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          value: [ALL]
+        documentSelector:
+          path: kind
+          value: Deployment
+          matchMany: true
+          skipEmptyTemplates: true
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+        template: setup-job.yaml
+
+  - it: never gives the backend the database owner's password
+    template: backend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OWNER_PASSWORD
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MIGRATION_DATABASE_URL
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].envFrom
+          content:
+            secretRef:
+              name: gatekeeper-db-owner
+
+  - it: gives the setup Job the owner login
+    template: setup-job.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OWNER_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: gatekeeper-db-owner
+                key: OWNER_PASSWORD
+
+  - it: keeps the backend's service-account token out of its pods
+    template: backend.yaml
+    documentSelector:
+      path: kind
+      value: ServiceAccount
+    asserts:
+      - equal:
+          path: automountServiceAccountToken
+          value: false

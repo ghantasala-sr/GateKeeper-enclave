@@ -1,0 +1,7 @@
+Gatekeeper {{ .Chart.AppVersion }} is installed as "{{ .Release.Name }}" in {{ .Release.Namespace }}.
+
+  App:   {{ include "gatekeeper.appUrl" . }}
+  Login: {{ include "gatekeeper.authUrl" . }}{{ if not .Values.keycloak.enabled }} (external IdP){{ end }}
+  Model: {{ .Values.llm.provider }}{{ if not .Values.llm.vertex.project }} (no Vertex project set: chat answers 503){{ end }}
+
+Check it:  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
