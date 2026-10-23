@@ -49,6 +49,16 @@ start)
   echo "now: new logins get the new key; existing tokens keep working. After 15 minutes: $0 finish"
   ;;
 finish)
+  # The old key signed every token issued until `start`; the last of those is valid for
+  # TOKEN_TTL_SECONDS after it. Retiring sooner logs those users out early, so refuse.
+  ttl=${TOKEN_TTL_SECONDS:-900}; margin=120   # + the rolling restart and the drain
+  created=$(sm versions describe latest --secret gk-token-signing-key-b64 --format='value(createTime)')
+  age=$(( $(date +%s) - $("$py" -c "import datetime,sys; print(int(datetime.datetime.fromisoformat(sys.argv[1].replace('Z','+00:00')).timestamp()))" "$created") ))
+  if [ "$age" -lt $(( ttl + margin )) ]; then
+    echo "too early: the new key is ${age}s old; tokens signed by the old key may be valid for $(( ttl + margin - age ))s more." >&2
+    echo "run finish after $(( (ttl + margin - age + 59) / 60 )) minutes" >&2
+    exit 1
+  fi
   printf 'none' | sm versions add gk-token-verify-keys-b64 --data-file=- >/dev/null
   echo "old key retired (gk-token-verify-keys-b64 = none)"
   restart
