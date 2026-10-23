@@ -1,0 +1,42 @@
+suite: HTTPS at the Gateway, and the backend trusting the private CA (Module C7)
+release:
+  name: gk
+values:
+  - ../values-local.yaml
+set:
+  gateway.className: gke-l7-rilb
+  gateway.envoyProxy.enabled: false
+  gateway.port: 443
+  gateway.tls.enabled: true
+  gateway.tls.preSharedCert: enclave-gateway-123
+  trustedCA: |
+    -----BEGIN CERTIFICATE-----
+    MIIBTEST
+    -----END CERTIFICATE-----
+templates:
+  - gateway.yaml
+  - backend.yaml
+  - configmap.yaml
+tests:
+  - it: terminates TLS with the regional certificate, by name
+    template: gateway.yaml
+    documentSelector: { path: kind, value: Gateway }
+    asserts:
+      - equal: { path: "spec.listeners[0].protocol", value: HTTPS }
+      - equal: { path: "spec.listeners[0].tls.options['networking.gke.io/pre-shared-certs']", value: enclave-gateway-123 }
+
+  - it: keeps the CA's line breaks (a folded PEM is silently ignored by OpenSSL)
+    template: backend.yaml
+    documentSelector: { path: kind, value: ConfigMap }
+    asserts:
+      - equal:
+          path: data["ca.crt"]
+          value: "-----BEGIN CERTIFICATE-----\nMIIBTEST\n-----END CERTIFICATE-----"
+
+  - it: points the backend's TLS clients at public roots + the CA
+    template: backend.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: SSL_CERT_FILE, value: /etc/gatekeeper-ca/ca-bundle.pem }

@@ -42,17 +42,17 @@ variable "gateway_ip" {
   default     = "10.10.0.100"
 }
 
-# The names typed into the browser, reached through an IAP tunnel to the bastion.
-# Browsers resolve *.localhost to loopback and treat it as a secure context, so
-# Keycloak's Secure cookies work over plain HTTP (C7 moves to internal HTTPS).
+# The app's internal names (Module C7: HTTPS at the Gateway, from a private CA). Both
+# are under one registrable domain, so they're the same site and the SAML login
+# cookie survives the IdP's POST.
 variable "app_domain" {
   type    = string
-  default = "gatekeeper.localhost."
+  default = "enclave.internal."
 }
 
 variable "app_hostnames" {
   type    = list(string)
-  default = ["gatekeeper.localhost", "auth.gatekeeper.localhost"]
+  default = ["gatekeeper.enclave.internal", "auth.enclave.internal"]
 }
 
 variable "node_count" {

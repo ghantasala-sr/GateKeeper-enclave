@@ -66,3 +66,18 @@ resource "google_artifact_registry_repository_iam_member" "bastion_write" {
   role       = "roles/artifactregistry.writer"
   member     = "serviceAccount:${google_service_account.this["gk-bastion"].email}"
 }
+
+# The installer looks up the Gateway's current certificate by name (it changes on
+# renewal). Just that permission, not all of Compute.
+resource "google_project_iam_custom_role" "cert_reader" {
+  project     = var.project_id
+  role_id     = "gatekeeperCertReader"
+  title       = "Gatekeeper: read the Gateway's SSL certificates"
+  permissions = ["compute.regionSslCertificates.get", "compute.regionSslCertificates.list"]
+}
+
+resource "google_project_iam_member" "bastion_reads_certs" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.cert_reader.id
+  member  = "serviceAccount:${google_service_account.this["gk-bastion"].email}"
+}

@@ -34,6 +34,18 @@ spec:
       # Start only once setup has created the schema and seeded the tenants, instead of
       # crash-looping until it has (the setup hook runs after the release's objects exist).
       initContainers:
+        {{- if .Values.trustedCA }}
+        # The system's public roots plus our private CA, for everything the backend calls.
+        - name: ca-bundle
+          image: {{ include "gatekeeper.image" (dict "root" . "component" "backend") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- include "gatekeeper.containerSecurityContext" . | nindent 12 }}
+          # A newline between the two, so the last system root and our CA never run together.
+          command: ["sh", "-c", "{ cat /etc/ssl/certs/ca-certificates.crt; echo; cat /ca/ca.crt; echo; } > /bundle/ca-bundle.pem"]
+          volumeMounts:
+            - { name: trusted-ca, mountPath: /ca, readOnly: true }
+            - { name: ca-bundle, mountPath: /bundle }
+        {{- end }}
         - name: wait-for-schema
           image: {{ include "gatekeeper.image" (dict "root" . "component" "backend") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -86,8 +98,17 @@ spec:
           livenessProbe:
             httpGet: { path: /health, port: http }
             periodSeconds: 10
-      {{- if eq (include "gatekeeper.secretManager" .) "true" }}
-      volumes: {{- include "gatekeeper.secretsVolume" (dict "root" . "component" "backend") | nindent 8 }}
+      {{- if or (eq (include "gatekeeper.secretManager" .) "true") .Values.trustedCA }}
+      volumes:
+        {{- if eq (include "gatekeeper.secretManager" .) "true" }}
+        {{- include "gatekeeper.secretsVolume" (dict "root" . "component" "backend") | nindent 8 }}
+        {{- end }}
+        {{- if .Values.trustedCA }}
+        - name: trusted-ca
+          configMap: { name: {{ $name }}-trusted-ca }
+        - name: ca-bundle
+          emptyDir: {}
+        {{- end }}
       {{- end }}
 ---
 apiVersion: v1
@@ -99,3 +120,14 @@ spec:
   selector: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "backend") | nindent 4 }}
   ports:
     - { name: http, port: 8000, targetPort: http }
+{{- if .Values.trustedCA }}
+---
+# A CA certificate is public: a ConfigMap, not a Secret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-trusted-ca
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "backend") | nindent 4 }}
+data:
+  ca.crt: |- {{- .Values.trustedCA | trim | nindent 4 }}
+{{- end }}

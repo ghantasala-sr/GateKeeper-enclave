@@ -184,16 +184,20 @@ tar xzf gatekeeper-bundle-0.1.3.tgz && cd gatekeeper-bundle-0.1.3
 ./proof/prove-zero-egress.sh
 ```
 
-**5. Reach it** (operator laptop):
+**5. Reach it** (operator laptop). Gatekeeper is served over HTTPS at `https://gatekeeper.enclave.internal`
+(and Keycloak at `https://auth.enclave.internal`), from a private CA whose certificate is `config/internal-ca.pem`.
 
-```bash
-gcloud compute ssh bastion --zone us-central1-a --tunnel-through-iap -- -N -L 8088:10.10.0.100:8088
-```
+1. Trust that certificate in the system keychain.
+2. Map both names to the tunnel in `/etc/hosts`: `127.0.0.1 gatekeeper.enclave.internal auth.enclave.internal`.
+3. Open the tunnel:
 
-Then open `http://gatekeeper.localhost:8088`. Browsers resolve `*.localhost` to the laptop and treat it as a
-secure context, so Keycloak's `Secure` cookies work over plain HTTP. Inside the VPC, the private DNS zone sends
-the same names to the Gateway, so the browser and the backend agree on one issuer URL. The test users'
-passwords are in Secret Manager (`gk-acme-test-password`, `gk-globex-test-password`).
+   ```bash
+   sudo gcloud compute ssh bastion --zone us-central1-a --tunnel-through-iap -- -N -L 443:10.10.0.100:443
+   ```
+
+Inside the VPC, a private DNS zone sends the same names to the Gateway, so the browser and the backend use one
+issuer URL. The test users' passwords are in Secret Manager (`gk-acme-test-password`, `gk-globex-test-password`).
+From the bastion, `proof/checks-in-enclave.sh logins` signs all six in without a browser.
 
 **Upgrades** follow the same path: change `release.lock.yaml`, build the new bundle, and run the installer
 again. `helm history gk -n gatekeeper` and `helm rollback` work as usual.
@@ -225,7 +229,7 @@ $0.25/hour.
 | Gap | Why, and the fix |
 |---|---|
 | **VPC Service Controls not enforced** | A perimeter needs a Google Cloud Organization, and this project has none (personal account). The network is still zero-egress. Production: put the project in an Organization, then add a perimeter around `aiplatform`, `artifactregistry`, `storage`, `secretmanager`, `logging`, `monitoring`, `container` and `sqladmin`, starting in dry-run mode. |
-| **Plain HTTP inside the Enclave** | Operators reach it over the IAP tunnel, which is encrypted, but the hop from the internal load balancer to the pods is HTTP. Production: internal HTTPS on the Gateway, with certificates from a private CA (Part C). |
+| **HTTP behind the load balancer** | TLS ends at the internal load balancer (Module C7, private CA); the hop from it to the pods, inside the VPC, is HTTP. Production: issue from Certificate Authority Service rather than a CA key in Terraform state, and consider TLS to the pods. |
 | **Keycloak runs `start-dev`, 1 replica** | Its database lives in the pod. The realm files pin user IDs, so a restart re-imports the same users. Production: 2+ replicas on their own Cloud SQL database. |
 | **Zonal, single-instance** | GKE and Cloud SQL are zonal to stay inside the free tier. Production: a regional cluster and Cloud SQL with high availability. |
 | **No SBOM yet** | The bundle is checksummed, but it doesn't yet ship an SBOM or signed images (Part C). |

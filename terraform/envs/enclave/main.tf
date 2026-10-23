@@ -169,3 +169,11 @@ module "monitoring" {
   notification_channels = var.alert_notification_channels
   depends_on            = [google_project_service.apis]
 }
+
+module "tls" {
+  source     = "../../modules/tls"
+  project_id = var.project_id
+  region     = var.region
+  hostnames  = var.app_hostnames
+  depends_on = [google_project_service.apis]
+}

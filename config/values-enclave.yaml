@@ -7,14 +7,12 @@ image:
   registry: us-central1-docker.pkg.dev/enclave-gk/gatekeeper
   pullPolicy: IfNotPresent
 
-# Reached from an operator's laptop through an IAP tunnel to the bastion (Step B13).
-# *.localhost: browsers treat it as a secure context, so Keycloak's Secure cookies work
-# over plain HTTP until C7 adds internal HTTPS. Inside the VPC, a private Cloud DNS
-# zone points the same names at the Gateway's VIP, so the backend and the browser use
-# one issuer URL.
+# Internal names over HTTPS (Module C7), from a private CA. A private Cloud DNS zone
+# points them at the Gateway's VIP, so the backend and the browser use one issuer URL;
+# both names are one site (enclave.internal), so the SAML login cookie survives.
 publicUrls:
-  app: http://gatekeeper.localhost:8088
-  auth: http://auth.gatekeeper.localhost:8088
+  app: https://gatekeeper.enclave.internal
+  auth: https://auth.enclave.internal
 
 llm:
   provider: vertex-gemini
@@ -59,7 +57,10 @@ keycloak:
 
 gateway:
   className: gke-l7-rilb      # GKE's internal Application Load Balancer
-  port: 8088
+  port: 443
+  tls:
+    enabled: true
+    preSharedCert: ""           # the regional SSL certificate's name: --set by install-from-bundle.sh
   addresses:
     - type: NamedAddress
       value: enclave-gateway  # 10.10.0.100, reserved by Terraform
@@ -75,7 +76,7 @@ networkPolicy:
   # Keycloak at publicUrls.auth, i.e. the Gateway's VIP.
   backendToAuth:
     - to: [{ ipBlock: { cidr: 10.10.0.100/32 } }]
-      ports: [{ protocol: TCP, port: 8088 }]
+      ports: [{ protocol: TCP, port: 443 }]
   # Cloud SQL's private range (Private Services Access).
   databaseEgress:
     - to: [{ ipBlock: { cidr: 10.50.0.0/16 } }]

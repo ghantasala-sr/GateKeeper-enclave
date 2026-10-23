@@ -11,3 +11,5 @@ output "backend_service_account" {
 }
 output "secret_ids" { value = module.secrets.secret_ids }
 output "bundle_bucket" { value = google_storage_bucket.bundles.name }
+output "internal_ca_cert_pem" { value = module.tls.ca_cert_pem }
+output "gateway_certificate_name" { value = module.tls.gateway_certificate_name }

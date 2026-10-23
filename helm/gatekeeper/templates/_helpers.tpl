@@ -115,22 +115,22 @@ Where a component's secrets come from (values: secrets.source).
 {{- eq .Values.secrets.source "secretManager" -}}
 {{- end }}
 
-{{/* env/envFrom (and the file mount) for the backend's containers. */}}
+{{/* env/envFrom and mounts for the backend's containers (secrets, and the CA bundle). */}}
 {{- define "gatekeeper.backendSecretEnv" -}}
 {{- $cm := include "gatekeeper.name" (dict "root" . "component" "backend") -}}
+{{- $sm := eq (include "gatekeeper.secretManager" .) "true" -}}
 envFrom:
   - configMapRef: { name: {{ $cm }} }
-{{- if eq (include "gatekeeper.secretManager" .) "true" }}
+{{- if not $sm }}
+  - secretRef: { name: {{ .Values.secrets.app }} }
+{{- end }}
 env:
+{{- if $sm }}
   - { name: SECRETS_DIR, value: {{ .Values.secrets.secretManager.mountPath | quote }} }
   - { name: DATABASE_HOST, value: {{ include "gatekeeper.dbHost" . | quote }} }
   - { name: DATABASE_PORT, value: {{ .Values.database.port | quote }} }
   - { name: DATABASE_NAME, value: {{ .Values.database.name | quote }} }
-volumeMounts:
-  - { name: secrets, mountPath: {{ .Values.secrets.secretManager.mountPath | quote }}, readOnly: true }
 {{- else }}
-  - secretRef: { name: {{ .Values.secrets.app }} }
-env:
   - name: APP_DB_PASSWORD
     valueFrom: { secretKeyRef: { name: {{ .Values.secrets.dbApp }}, key: APP_DB_PASSWORD } }
   # Kubernetes expands $(APP_DB_PASSWORD) from the line above; the URL itself is never stored.
@@ -138,6 +138,19 @@ env:
     value: {{ printf "postgresql://gatekeeper_app:$(APP_DB_PASSWORD)@%s:%v/%s" (include "gatekeeper.dbHost" .) .Values.database.port .Values.database.name | quote }}
   - name: OKTA_CLIENT_SECRET
     valueFrom: { secretKeyRef: { name: {{ .Values.secrets.oidcClientSecret.name }}, key: {{ .Values.secrets.oidcClientSecret.key }} } }
+{{- end }}
+{{- if .Values.trustedCA }}
+  # OpenSSL, httpx and urllib all read this: public roots + the private CA.
+  - { name: SSL_CERT_FILE, value: /etc/gatekeeper-ca/ca-bundle.pem }
+{{- end }}
+{{- if or $sm .Values.trustedCA }}
+volumeMounts:
+{{- if $sm }}
+  - { name: secrets, mountPath: {{ .Values.secrets.secretManager.mountPath | quote }}, readOnly: true }
+{{- end }}
+{{- if .Values.trustedCA }}
+  - { name: ca-bundle, mountPath: /etc/gatekeeper-ca, readOnly: true }
+{{- end }}
 {{- end }}
 {{- end }}
 

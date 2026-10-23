@@ -66,6 +66,11 @@ database:
     storage: 1Gi
     storageClassName: ""          # "" = the cluster's default StorageClass
 
+# A private CA the backend must trust (PEM), e.g. the one that signed the Gateway's
+# certificate: the backend calls Keycloak at publicUrls.auth through the Gateway.
+# Added to the system roots, never replacing them (Google APIs still need those).
+trustedCA: ""
+
 # How long a terminating pod keeps serving while the load balancer takes it out of rotation.
 drainSeconds: 15
 
@@ -105,6 +110,11 @@ gateway:
     serviceType: ClusterIP
   # GKE: a reserved internal IP for the load balancer (a NamedAddress, created by Terraform).
   addresses: []
+  # HTTPS at the Gateway (Module C7). GKE: the name of a regional SSL certificate
+  # (Terraform's modules/tls), so the key never lands in the cluster.
+  tls:
+    enabled: false
+    preSharedCert: ""
   # GKE's load balancer health-checks "/" unless told otherwise; the backend and Keycloak
   # answer elsewhere (/ready, and /health/ready on Keycloak's management port).
   gkeHealthChecks: false

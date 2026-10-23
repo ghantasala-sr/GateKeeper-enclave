@@ -36,9 +36,19 @@ spec:
   addresses: {{- toYaml . | nindent 4 }}
   {{- end }}
   listeners:
+    {{- if .Values.gateway.tls.enabled }}
+    - name: https
+      protocol: HTTPS
+      port: {{ .Values.gateway.port }}
+      tls:
+        mode: Terminate
+        options:
+          networking.gke.io/pre-shared-certs: {{ required "gateway.tls.preSharedCert is required when gateway.tls.enabled" .Values.gateway.tls.preSharedCert | quote }}
+    {{- else }}
     - name: http
       protocol: HTTP
       port: {{ .Values.gateway.port }}
+    {{- end }}
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

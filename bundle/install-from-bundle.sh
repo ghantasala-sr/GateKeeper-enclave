@@ -62,8 +62,17 @@ put gatekeeper-keycloak --from-literal=KC_BOOTSTRAP_ADMIN_PASSWORD="$(s keycloak
 
 echo "== 5. install"
 db_host=$(gcloud sql instances describe enclave-pg --format='value(ipAddresses[0].ipAddress)')
+tls=()
+if [ -f config/internal-ca.pem ]; then
+  # The Gateway's certificate (Terraform's modules/tls) and the CA the backend must trust.
+  cert=$(gcloud compute ssl-certificates list --regions "$region" --filter="name~^enclave-gateway-" \
+         --sort-by=~creationTimestamp --format='value(name)' | head -1)
+  [ -n "$cert" ] || { echo "   no enclave-gateway-* SSL certificate found (terraform modules/tls, and the bastion's gatekeeperCertReader role)" >&2; exit 1; }
+  tls=(--set gateway.tls.preSharedCert="$cert" --set-file trustedCA=config/internal-ca.pem)
+  echo "   https: certificate $cert, private CA config/internal-ca.pem"
+fi
 helm upgrade --install $release "oci://$reg/gatekeeper" --version "$chart_version" -n $ns \
-  -f config/values-enclave.yaml --set image.tag="$version" --set database.host="$db_host" --timeout 15m
+  -f config/values-enclave.yaml --set image.tag="$version" --set database.host="$db_host" "${tls[@]}" --timeout 15m
 for d in backend frontend keycloak; do kubectl rollout status deployment/$release-$d -n $ns --timeout=10m; done
 helm test $release -n $ns --logs | grep -E "Phase|/health|/ready" | sed 's/^/   /'
 if grep -q "source: secretManager" config/values-enclave.yaml; then

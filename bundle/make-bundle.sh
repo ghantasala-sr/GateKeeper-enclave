@@ -55,9 +55,12 @@ echo "   kubectl $kubectl_v, helm $helm_v, crane $crane_v, k6 $k6_v"
 
 echo "-- config and installer"
 cp "$repo/config/values-enclave.yaml" "$out/config/"
+# The private CA's certificate (public): terraform output -raw internal_ca_cert_pem > config/internal-ca.pem
+[ -f "$repo/config/internal-ca.pem" ] && cp "$repo/config/internal-ca.pem" "$out/config/"
 cp "$repo/release.lock.yaml" "$out/"
 cp "$repo/bundle/install-from-bundle.sh" "$out/" && chmod +x "$out/install-from-bundle.sh"
 mkdir -p "$out/proof/k6" && cp "$repo/proof/"*.sh "$out/proof/" && cp "$repo/proof/k6/"*.js "$out/proof/k6/"
+cp "$repo/proof/blackbox_check.py" "$repo/keycloak/check_logins.py" "$out/proof/"   # run in-Enclave by checks-in-enclave.sh
 
 (cd "$out" && find . -type f ! -name SHA256SUMS | sort | xargs shasum -a 256 > SHA256SUMS)
 # No macOS extended attributes in the archive (GNU tar on the bastion warns about them).

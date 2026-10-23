@@ -58,6 +58,11 @@ resource "google_secret_manager_secret_version" "this" {
   for_each    = local.values
   secret      = google_secret_manager_secret.this[each.key].id
   secret_data = each.value
+  lifecycle {
+    # Terraform sets the FIRST value only. Rotations (proof/rotate-signing-key.sh) add and
+    # disable versions outside Terraform; re-enabling a retired key would undo them.
+    ignore_changes = [enabled, secret_data]
+  }
 }
 
 # Workloads read their own secrets as files (GKE's Secret Manager CSI driver).
