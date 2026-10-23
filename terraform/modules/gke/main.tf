@@ -44,6 +44,15 @@ resource "google_container_cluster" "gk" {
     channel = "CHANNEL_STANDARD"
   }
 
+  # Cloud Logging and Managed Service for Prometheus: Google APIs, reached through the
+  # restricted range like everything else. Nothing is sent outside Google.
+  monitoring_config {
+    enable_components = ["SYSTEM_COMPONENTS"]
+    managed_prometheus {
+      enabled = true
+    }
+  }
+
   # The default pool is removed right away; give it the same locked-down identity anyway.
   node_config {
     service_account = var.node_service_account
@@ -56,7 +65,10 @@ resource "google_container_node_pool" "main" {
   name       = "main"
   location   = var.zone
   cluster    = google_container_cluster.gk.name
-  node_count = var.node_count
+  node_count = var.node_count # per zone
+  # One zone normally; several for the HA drills (Module C1), so losing a zone
+  # (or draining a node) leaves the others serving.
+  node_locations = var.node_zones
 
   node_config {
     machine_type    = var.machine_type

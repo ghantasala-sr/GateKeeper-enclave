@@ -8,9 +8,10 @@
 terraform {
   required_version = ">= 1.9"
   required_providers {
-    google = { source = "hashicorp/google", version = "~> 8.8" }
-    random = { source = "hashicorp/random", version = "~> 3.9" }
-    tls    = { source = "hashicorp/tls", version = "~> 4.4" }
+    google      = { source = "hashicorp/google", version = "~> 8.8" }
+    google-beta = { source = "hashicorp/google-beta", version = "~> 8.8" }
+    random      = { source = "hashicorp/random", version = "~> 3.9" }
+    tls         = { source = "hashicorp/tls", version = "~> 4.4" }
   }
   backend "gcs" {
     prefix = "enclave"
@@ -21,6 +22,14 @@ provider "google" {
   project               = var.project_id
   region                = var.region
   zone                  = var.zone
+  user_project_override = true
+  billing_project       = var.project_id
+}
+
+# Only for resources not yet in the GA provider (the Monitoring service agent).
+provider "google-beta" {
+  project               = var.project_id
+  region                = var.region
   user_project_override = true
   billing_project       = var.project_id
 }
@@ -39,6 +48,7 @@ resource "google_project_service" "apis" {
     "iam.googleapis.com",
     "logging.googleapis.com",
     "monitoring.googleapis.com",
+    "pubsub.googleapis.com",
   ])
   service            = each.value
   disable_on_destroy = false
@@ -100,6 +110,7 @@ module "cloudsql" {
   private_services_connection = module.network.private_services_connection
   owner_password              = module.secrets.owner_password
   running                     = var.cloudsql_running
+  high_availability           = var.ha
 }
 
 module "gke" {
@@ -112,7 +123,8 @@ module "gke" {
   authorized_cidr      = var.ranges.main
   node_service_account = module.iam.nodes_sa_email
   backend_sa_name      = module.iam.backend_sa_name
-  node_count           = var.node_count
+  node_count           = var.ha ? 1 : var.node_count
+  node_zones           = var.ha ? ["${var.region}-a", "${var.region}-b", "${var.region}-c"] : [var.zone]
   # Nodes need private DNS (Google APIs -> restricted range) from their first boot.
   depends_on = [module.dns, module.firewall]
 }
@@ -142,4 +154,11 @@ resource "google_storage_bucket_iam_member" "bastion_reads_bundles" {
   bucket = google_storage_bucket.bundles.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${module.iam.bastion_sa_email}"
+}
+
+module "monitoring" {
+  source                = "../../modules/monitoring"
+  project_id            = var.project_id
+  notification_channels = var.alert_notification_channels
+  depends_on            = [google_project_service.apis]
 }

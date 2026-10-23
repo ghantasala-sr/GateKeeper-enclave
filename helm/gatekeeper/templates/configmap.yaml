@@ -12,6 +12,7 @@ data:
   VERTEX_TIMEOUT_SECONDS: {{ .Values.llm.vertex.timeoutSeconds | quote }}
   VERTEX_RETRY_ATTEMPTS: {{ .Values.llm.vertex.retryAttempts | quote }}
   FRONTEND_URL: {{ include "gatekeeper.appUrl" . | quote }}
+  METRICS_PORT: {{ ternary "9090" "0" .Values.metrics.enabled | quote }}
   TOKEN_ISSUER: {{ printf "%s/api" (include "gatekeeper.appUrl" .) | quote }}
   # Acme: OIDC (the OKTA_* names are kept from the Okta setup)
   OKTA_ISSUER: {{ printf "%s/realms/acme" (include "gatekeeper.authUrl" .) | quote }}

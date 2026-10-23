@@ -1,0 +1,15 @@
+{{- /* A node drain (upgrade, repair, scale-in) may take at most one replica at a time. */}}
+{{- range $component := list "backend" "frontend" }}
+{{- if gt (int (index $.Values $component).replicas) 1 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "gatekeeper.name" (dict "root" $ "component" $component) }}
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" $ "component" $component) | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" $ "component" $component) | nindent 6 }}
+{{- end }}
+{{- end }}

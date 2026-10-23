@@ -92,6 +92,22 @@ spec:
         - podSelector:
             matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "backend") | nindent 14 }}
       ports: [{ protocol: TCP, port: 8000 }]
+{{- if and .Values.metrics.enabled .Values.metrics.scrapers }}
+---
+# the backend's metrics port: only the metrics collectors
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "gatekeeper.name" (dict "root" . "component" "metrics-ingress") }}
+  labels: {{- include "gatekeeper.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "backend") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from: {{- toYaml .Values.metrics.scrapers | nindent 8 }}
+      ports: [{ protocol: TCP, port: 9090 }]
+{{- end }}
 {{- if .Values.database.inCluster.enabled }}
 ---
 # postgres accepts only the backend and the setup Job

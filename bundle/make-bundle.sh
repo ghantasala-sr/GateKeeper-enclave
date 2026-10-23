@@ -13,7 +13,7 @@ field() { sed -n "s/^$1: *\([^ #]*\).*/\1/p" "$lock"; }
 tool() { sed -n "s/^  $1: *\([^ #]*\).*/\1/p" "$lock"; }
 
 version=$(field version); platform=$(field platform); arch=${platform#linux/}
-kubectl_v=$(tool kubectl); helm_v=$(tool helm); crane_v=$(tool crane)
+kubectl_v=$(tool kubectl); helm_v=$(tool helm); crane_v=$(tool crane); k6_v=$(tool k6)
 out="$repo/dist/gatekeeper-bundle-$version"
 rm -rf "$out" && mkdir -p "$out"/{images,charts,tools,config}
 echo "== gatekeeper-bundle-$version ($platform)"
@@ -45,14 +45,19 @@ curl -sSfL -o "$tmp/$crane_tgz" "https://github.com/google/go-containerregistry/
 (cd "$tmp" && curl -sSfL "https://github.com/google/go-containerregistry/releases/download/$crane_v/checksums.txt" \
   | grep " $crane_tgz\$" | shasum -a 256 -c - >/dev/null)
 tar xzf "$tmp/$crane_tgz" -C "$out/tools" crane
+k6_tgz="k6-$k6_v-linux-$arch.tar.gz"
+curl -sSfL -o "$tmp/$k6_tgz" "https://github.com/grafana/k6/releases/download/$k6_v/$k6_tgz"
+(cd "$tmp" && curl -sSfL "https://github.com/grafana/k6/releases/download/$k6_v/k6-$k6_v-checksums.txt" \
+  | grep " $k6_tgz\$" | shasum -a 256 -c - >/dev/null)
+tar xzf "$tmp/$k6_tgz" -C "$tmp" && mv "$tmp/k6-$k6_v-linux-$arch/k6" "$out/tools/k6"
 chmod +x "$out/tools/"*
-echo "   kubectl $kubectl_v, helm $helm_v, crane $crane_v"
+echo "   kubectl $kubectl_v, helm $helm_v, crane $crane_v, k6 $k6_v"
 
 echo "-- config and installer"
 cp "$repo/config/values-enclave.yaml" "$out/config/"
 cp "$repo/release.lock.yaml" "$out/"
 cp "$repo/bundle/install-from-bundle.sh" "$out/" && chmod +x "$out/install-from-bundle.sh"
-mkdir -p "$out/proof" && cp "$repo/proof/prove-zero-egress.sh" "$out/proof/"
+mkdir -p "$out/proof/k6" && cp "$repo/proof/"*.sh "$out/proof/" && cp "$repo/proof/k6/"*.js "$out/proof/k6/"
 
 (cd "$out" && find . -type f ! -name SHA256SUMS | sort | xargs shasum -a 256 > SHA256SUMS)
 # No macOS extended attributes in the archive (GNU tar on the bastion warns about them).

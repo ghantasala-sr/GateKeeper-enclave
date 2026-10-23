@@ -33,9 +33,13 @@ database:
   ownerUser: gatekeeper_owner
 
 backend:
+  replicas: 3                 # spread across zones and nodes; a drain or upgrade always leaves 2
   serviceAccount:
     annotations:
       iam.gke.io/gcp-service-account: gk-backend@enclave-gk.iam.gserviceaccount.com   # Workload Identity -> Vertex AI
+
+frontend:
+  replicas: 2
 
 keycloak:
   image: us-central1-docker.pkg.dev/enclave-gk/gatekeeper/keycloak:26.2.5   # from the bundle, not quay.io
@@ -72,3 +76,8 @@ networkPolicy:
       ports: [{ protocol: TCP, port: 80 }]
     - to: [{ ipBlock: { cidr: 169.254.169.252/32 } }]
       ports: [{ protocol: TCP, port: 988 }]
+
+metrics:
+  podMonitoring: true
+  scrapers:   # Managed Service for Prometheus collectors
+    - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: gmp-system } }

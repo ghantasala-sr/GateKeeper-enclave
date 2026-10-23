@@ -61,8 +61,20 @@ variable "node_count" {
   default     = 2
 }
 
+variable "ha" {
+  description = "Module C1 drills: one node in each of three zones, and Cloud SQL with a standby. Costs more; turn off after."
+  type        = bool
+  default     = false
+}
+
 variable "cloudsql_running" {
   description = "false stops Cloud SQL between sessions."
   type        = bool
   default     = true
+}
+
+variable "alert_notification_channels" {
+  description = "Where alerts go (Cloud Monitoring notification channel IDs). Empty: console only."
+  type        = list(string)
+  default     = []
 }

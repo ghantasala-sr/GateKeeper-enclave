@@ -87,6 +87,16 @@ def test_second_login_reuses_user_and_refreshes_role():
     run_in_rollback(test)
 
 
+def test_every_login_records_when_it_happened():
+    async def test(conn, tenant_id, owner):
+        p = await principal_from_okta(conn, claims())
+        first = await conn.fetchval("SELECT last_login_at FROM users WHERE id = $1", uuid.UUID(p.user_id))
+        await principal_from_okta(conn, claims())
+        second = await conn.fetchval("SELECT last_login_at FROM users WHERE id = $1", uuid.UUID(p.user_id))
+        assert first is not None and second >= first
+    run_in_rollback(test)
+
+
 def test_first_login_adopts_precreated_user_by_email():
     async def test(conn, tenant_id, owner):
         async with tenant_tx(owner, tenant_id):  # pre-created outside this transaction, as SCIM/seed would

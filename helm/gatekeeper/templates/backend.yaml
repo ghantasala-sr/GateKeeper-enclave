@@ -18,6 +18,7 @@ metadata:
   labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "backend") | nindent 4 }}
 spec:
   replicas: {{ .Values.backend.replicas }}
+  {{- include "gatekeeper.rollingUpdate" . | nindent 2 }}
   selector:
     matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "backend") | nindent 6 }}
   template:
@@ -28,6 +29,8 @@ spec:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       serviceAccountName: {{ $name }}
+      terminationGracePeriodSeconds: {{ add .Values.drainSeconds 30 }}
+      {{- include "gatekeeper.topologySpread" (dict "root" . "component" "backend") | nindent 6 }}
       securityContext: {{- include "gatekeeper.podSecurityContext" . | nindent 8 }}
       # Start only once setup has created the schema and seeded the tenants, instead of
       # crash-looping until it has (the setup hook runs after the release's objects exist).
@@ -68,6 +71,9 @@ spec:
           securityContext: {{- include "gatekeeper.containerSecurityContext" . | nindent 12 }}
           ports:
             - { name: http, containerPort: 8000 }
+            {{- if .Values.metrics.enabled }}
+            - { name: metrics, containerPort: 9090 }
+            {{- end }}
           envFrom:
             - configMapRef: { name: {{ $name }} }
             - secretRef: { name: {{ .Values.secrets.app }} }
@@ -80,6 +86,7 @@ spec:
             - name: OKTA_CLIENT_SECRET
               valueFrom: { secretKeyRef: { name: {{ .Values.secrets.oidcClientSecret.name }}, key: {{ .Values.secrets.oidcClientSecret.key }} } }
           resources: {{- toYaml .Values.backend.resources | nindent 12 }}
+          {{- include "gatekeeper.gracefulStop" . | nindent 10 }}
           # Model load takes ~10s; allow up to 60s before the other probes start.
           startupProbe:
             httpGet: { path: /health, port: http }

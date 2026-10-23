@@ -18,6 +18,11 @@ variable "backend_ksa" {
   default     = "gatekeeper/gk-backend"
 }
 
+variable "node_zones" {
+  description = "Zones for the nodes (node_count in EACH)."
+  type        = list(string)
+}
+
 variable "node_count" {
   type    = number
   default = 2

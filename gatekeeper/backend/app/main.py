@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import audit, db
+from app import audit, db, metrics
 from app import trace as trace_log
 from app.auth import oidc, saml, tokens
 from app.auth.bridge import Principal
@@ -25,6 +25,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s %(me
 async def lifespan(app: FastAPI):
     await db.open_pool()
     embed(["warm up"])  # load the embedding model once at startup
+    metrics.serve(settings.metrics_port)
     yield
     await db.close_pool()
 
@@ -51,6 +52,8 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
     allow_credentials=False,
 )
+# Outermost, so it times everything, including requests the other middleware answer.
+app.add_middleware(metrics.MetricsMiddleware)
 app.include_router(oidc.router)
 app.include_router(saml.router)
 app.include_router(scim.router)
@@ -105,8 +108,10 @@ async def me(principal: Principal = Depends(tokens.require_scope("docs:read"))) 
     """Who the token belongs to, for the frontend's company/role badge."""
     async with db.run_as(principal) as conn:
         tenant = await conn.fetchrow("SELECT name, idp_type FROM tenants WHERE id = $1::uuid", principal.tenant_id)
+        last_login = await conn.fetchval("SELECT last_login_at FROM users WHERE id = $1::uuid", principal.user_id)
     return {"email": principal.email, "role": principal.role, "scopes": list(principal.scopes),
-            "tenant_id": principal.tenant_id, "tenant": tenant["name"], "idp_type": tenant["idp_type"]}
+            "tenant_id": principal.tenant_id, "tenant": tenant["name"], "idp_type": tenant["idp_type"],
+            "last_login_at": last_login.isoformat() if last_login else None}
 
 
 @app.post("/chat")
@@ -138,7 +143,9 @@ async def chat(req: ChatRequest, request: Request,
         # The agent searches as this principal; RLS limits what its tool can see.
         text, chunks = await run_agent(principal, req.question, trace=trace)
     except ModelUnavailable as e:
+        metrics.MODEL_UNAVAILABLE.inc()
         raise HTTPException(503, str(e))
+    metrics.CHUNKS_RETRIEVED.inc(len(chunks))
 
     chunk_ids = list(dict.fromkeys(c.id for c in chunks))
     with trace.step("Audit log entry written", "audit") as t:
@@ -149,6 +156,7 @@ async def chat(req: ChatRequest, request: Request,
                         "app_privileges": "INSERT only: it can't read, change, or delete the log"}
     with trace.step("Independent leak check", "check") as t:
         logged = trace_log.record(user, req.question, chunks, text)
+        metrics.FORBIDDEN_RETRIEVED.inc(logged["forbidden_retrieved"])
         t["ok"] = logged["forbidden_retrieved"] == 0
         t["details"] = {"method": "re-checks every retrieved chunk in Python, separately from RLS",
                         "chunks_checked": len(chunks), "forbidden_retrieved": logged["forbidden_retrieved"]}

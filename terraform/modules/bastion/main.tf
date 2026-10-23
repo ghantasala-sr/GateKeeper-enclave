@@ -42,4 +42,10 @@ resource "google_compute_instance" "bastion" {
   }
 
   allow_stopping_for_update = true
+
+  lifecycle {
+    # The debian-12 family moves to a new image every few weeks; that must not
+    # recreate the bastion (and wipe the unpacked bundle). It's patched in place.
+    ignore_changes = [boot_disk[0].initialize_params[0].image]
+  }
 }

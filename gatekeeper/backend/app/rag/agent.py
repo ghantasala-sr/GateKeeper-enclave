@@ -13,12 +13,11 @@ Enclave, Claude for local development), so none of this depends on a provider.
 """
 
 import operator
-import time
 from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from app import db
+from app import db, metrics
 from app.auth.bridge import Principal
 from app.llm import ModelReply, ToolResult, ToolSpec, Turn, get_model
 from app.rag.search import Chunk, search
@@ -128,6 +127,8 @@ async def run_tools(state: AgentState) -> dict:
             else:
                 chunks, error = await search_documents(principal, call.arguments)
             t["ok"] = error is None
+            if error:
+                metrics.TOOL_CALLS_REJECTED.inc()
             t["details"] = {
                 "model_asked_for": call.arguments,
                 "accepted": error is None,

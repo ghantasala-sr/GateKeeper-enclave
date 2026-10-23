@@ -145,7 +145,7 @@ async def _upsert_user(conn: asyncpg.Connection, tenant_id, *, external_id: str,
         try:
             # The IdP is the source of truth: refresh email and role on every login.
             await conn.execute(
-                "UPDATE users SET external_id = $2, email = $3, role = $4 WHERE id = $1",
+                "UPDATE users SET external_id = $2, email = $3, role = $4, last_login_at = now() WHERE id = $1",
                 user["id"], external_id, email, role,
             )
         except asyncpg.UniqueViolationError:

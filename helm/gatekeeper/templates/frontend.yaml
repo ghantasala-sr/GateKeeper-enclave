@@ -8,6 +8,7 @@ metadata:
   labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "frontend") | nindent 4 }}
 spec:
   replicas: {{ .Values.frontend.replicas }}
+  {{- include "gatekeeper.rollingUpdate" . | nindent 2 }}
   selector:
     matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "frontend") | nindent 6 }}
   template:
@@ -15,6 +16,8 @@ spec:
       labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "frontend") | nindent 8 }}
     spec:
       automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ add .Values.drainSeconds 30 }}
+      {{- include "gatekeeper.topologySpread" (dict "root" . "component" "frontend") | nindent 6 }}
       securityContext: {{- include "gatekeeper.podSecurityContext" . | nindent 8 }}
       containers:
         - name: frontend
@@ -24,6 +27,7 @@ spec:
           ports:
             - { name: http, containerPort: 3000 }
           resources: {{- toYaml .Values.frontend.resources | nindent 12 }}
+          {{- include "gatekeeper.gracefulStop" . | nindent 10 }}
           readinessProbe:
             httpGet: { path: /, port: http }
             periodSeconds: 5

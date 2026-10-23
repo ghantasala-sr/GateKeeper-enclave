@@ -46,5 +46,7 @@ class Settings(BaseSettings):
     token_audience: str = "gatekeeper-api"
     token_ttl_seconds: int = 900  # 15 minutes
 
+    metrics_port: int = 0  # 0 = off; the chart sets 9090 (never routed by the Gateway)
+
 
 settings = Settings()

@@ -62,3 +62,35 @@ capabilities: { drop: [ALL] }
 {{- define "gatekeeper.authUrl" -}}
 {{ required "publicUrls.auth is required" .Values.publicUrls.auth | trimSuffix "/" }}
 {{- end }}
+
+{{/* Zero-downtime rollouts: add a pod before removing one. */}}
+{{- define "gatekeeper.rollingUpdate" -}}
+strategy:
+  type: RollingUpdate
+  rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+{{- end }}
+
+{{/* Spread replicas across zones (when the cluster has several) and nodes. */}}
+{{- define "gatekeeper.topologySpread" -}}
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels: {{- include "gatekeeper.selectorLabels" . | nindent 8 }}
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels: {{- include "gatekeeper.selectorLabels" . | nindent 8 }}
+{{- end }}
+
+{{/*
+A terminating pod is removed from the Service at once, but a load balancer notices
+a few seconds later; keep serving until it has, so no request lands on a closed port.
+*/}}
+{{- define "gatekeeper.gracefulStop" -}}
+lifecycle:
+  preStop:
+    exec: { command: ["sleep", "{{ .Values.drainSeconds }}"] }
+{{- end }}

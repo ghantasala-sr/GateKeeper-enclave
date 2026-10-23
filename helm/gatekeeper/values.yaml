@@ -49,6 +49,9 @@ database:
     storage: 1Gi
     storageClassName: ""          # "" = the cluster's default StorageClass
 
+# How long a terminating pod keeps serving while the load balancer takes it out of rotation.
+drainSeconds: 15
+
 backend:
   replicas: 2
   resources:
@@ -87,6 +90,14 @@ gateway:
   # GKE: how long the load balancer waits for the backend (default 30s). A chat answer can
   # take several model calls, each with retries. 0 = leave GKE's default.
   gkeBackendTimeoutSeconds: 0
+
+# Prometheus metrics on the backend's separate port 9090 (never routed by the Gateway).
+metrics:
+  enabled: true
+  # GKE: Managed Service for Prometheus scrapes them (a PodMonitoring resource).
+  podMonitoring: false
+  # Who may scrape :9090 (GKE: the gmp-system collectors).
+  scrapers: []
 
 networkPolicy:
   enabled: true

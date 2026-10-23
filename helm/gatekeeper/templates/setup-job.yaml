@@ -1,15 +1,18 @@
 {{- $ownerUrl := printf "postgresql://%s:$(OWNER_PASSWORD)@%s:%v/%s" .Values.database.ownerUser (include "gatekeeper.dbHost" .) .Values.database.port .Values.database.name }}
 # Schema, seed data and embeddings, as the database owner. A hook, so it runs on every
-# install and upgrade (migrations are idempotent), after the release's objects exist:
-# the in-cluster Postgres and the ConfigMap it reads. The Job retries until the
-# database accepts connections; the backend waits for it in an init container.
+# install and upgrade (migrations are idempotent):
+#   - install: AFTER the release's objects exist (the in-cluster Postgres and the
+#     ConfigMap it reads); the backend waits for it in an init container.
+#   - upgrade: BEFORE the new pods start, so new code never meets an old schema.
+#     Migrations only expand (add), so the pods still running the previous release
+#     keep working against the new schema until they're replaced.
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ include "gatekeeper.name" (dict "root" . "component" "setup") }}
   labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "setup") | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook": post-install,pre-upgrade
     "helm.sh/hook-weight": "0"
     # Delete the previous run before creating this one (a Job's template can't be changed),
     # and clean up after success. A failed Job is kept so its logs can be read.

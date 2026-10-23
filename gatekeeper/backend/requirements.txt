@@ -17,3 +17,4 @@ python-dotenv==1.2.4
 python-multipart==0.0.32
 langgraph==1.2.16
 google-genai==2.28.0
+prometheus-client==0.26.0

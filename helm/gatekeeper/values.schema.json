@@ -358,6 +358,28 @@
         }
       },
       "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "podMonitoring": {
+          "type": "boolean"
+        },
+        "scrapers": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "drainSeconds": {
+      "type": "integer",
+      "minimum": 0
     }
   },
   "additionalProperties": true,

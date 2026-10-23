@@ -1,0 +1,15 @@
+{{- if and .Values.metrics.enabled .Values.metrics.podMonitoring }}
+# GKE Managed Service for Prometheus: scrape the backend's metrics port. The data
+# goes to Cloud Monitoring through Google's restricted API range, like everything else.
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: {{ include "gatekeeper.name" (dict "root" . "component" "backend") }}
+  labels: {{- include "gatekeeper.componentLabels" (dict "root" . "component" "backend") | nindent 4 }}
+spec:
+  selector:
+    matchLabels: {{- include "gatekeeper.selectorLabels" (dict "root" . "component" "backend") | nindent 6 }}
+  endpoints:
+    - port: metrics
+      interval: 30s
+{{- end }}

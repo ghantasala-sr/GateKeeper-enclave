@@ -1,0 +1,47 @@
+suite: metrics stay inside the cluster
+release:
+  name: gk
+values:
+  - ../values-local.yaml
+templates:
+  - backend.yaml
+  - configmap.yaml
+  - gateway.yaml
+  - networkpolicies.yaml
+  - podmonitoring.yaml
+tests:
+  - it: serves metrics on their own port, which the Gateway never routes
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content: { name: metrics, containerPort: 9090 }
+        template: backend.yaml
+        documentSelector: { path: kind, value: Deployment }
+      - equal:
+          path: data.METRICS_PORT
+          value: "9090"
+        template: configmap.yaml
+      - equal:
+          path: spec.rules[0].backendRefs[0].port
+          value: 8000
+        template: gateway.yaml
+        documentSelector: { path: metadata.name, value: gk-app }
+
+  - it: lets only the configured scrapers reach the metrics port
+    set:
+      metrics.scrapers:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: gmp-system } }
+    template: networkpolicies.yaml
+    documentSelector: { path: metadata.name, value: gk-metrics-ingress }
+    asserts:
+      - equal:
+          path: spec.ingress[0].ports
+          value: [{ protocol: TCP, port: 9090 }]
+
+  - it: renders a PodMonitoring only when asked (GKE)
+    set:
+      metrics.podMonitoring: true
+    template: podmonitoring.yaml
+    asserts:
+      - isKind: { of: PodMonitoring }
+      - equal: { path: "spec.endpoints[0].port", value: metrics }

@@ -15,7 +15,7 @@ resource "google_sql_database_instance" "gatekeeper" {
   settings {
     edition           = "ENTERPRISE" # shared-core tiers need Enterprise, not Enterprise Plus
     tier              = var.tier
-    availability_type = "ZONAL" # Part C turns on REGIONAL (HA)
+    availability_type = var.high_availability ? "REGIONAL" : "ZONAL" # REGIONAL: a standby in another zone
     disk_size         = 10
     disk_type         = "PD_SSD"
     activation_policy = var.running ? "ALWAYS" : "NEVER" # stop it between sessions

@@ -17,6 +17,12 @@ variable "tier" {
   default = "db-f1-micro" # smallest shared-core
 }
 
+variable "high_availability" {
+  description = "A synchronous standby in another zone, with automatic failover (costs about double)."
+  type        = bool
+  default     = false
+}
+
 variable "running" {
   description = "false stops the instance (no compute charges) between sessions."
   type        = bool
