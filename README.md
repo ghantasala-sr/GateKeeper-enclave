@@ -12,9 +12,11 @@
 security, not the model, decides what each person can see. This repo is the deployment: the infrastructure, packaging,
 and evidence needed to run a specific Gatekeeper release inside an isolated environment, and to prove it stays isolated.
 
-> **Status:** the Enclave is built and verified on GCP (release 0.1.3): zero egress proven, Gatekeeper's full test
-> suite passing inside it, and Gemini answering through Google's restricted API range. Production hardening is next
-> ([roadmap](#roadmap)). The platform team's guide is [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+> **Status:** built, hardened and drilled on GCP (release 0.1.13). Zero egress is proven and alerted on. Gatekeeper's
+> full test suite passes inside the Enclave, and Gemini answers through Google's restricted API range. Upgrades,
+> rollbacks, node drains and a database failover run with no failed requests. Only signed images can run.
+> Start with [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) (the platform team's guide) and
+> [`docs/RUNBOOK.md`](docs/RUNBOOK.md) (on call); the evidence is in [`docs/drills/`](docs/drills/).
 
 ---
 
@@ -95,7 +97,7 @@ flowchart LR
 ├── release.lock.yaml        # the exact GateKeeper release to deploy
 ├── terraform/
 │   ├── bootstrap/           # project, billing, budget alerts, state bucket
-│   ├── modules/             # network, firewall, dns, iam (+ registry), secrets, cloudsql, gke, bastion
+│   ├── modules/             # network, firewall, dns, iam, secrets, cloudsql, gke, bastion, monitoring, tls, supplychain
 │   └── envs/enclave/        # wires the modules together
 ├── config/
 │   └── values-enclave.yaml  # environment settings layered on the chart's defaults
@@ -103,7 +105,9 @@ flowchart LR
 ├── proof/                   # zero-egress proof, plan policy check, in-Enclave suite, black-box security checks
 ├── labs/                    # local Kubernetes / Helm / Terraform groundwork (kind)
 ├── docs/
-│   └── DEPLOYMENT.md        # for the Enclave's platform team (runbook and drills come with production)
+│   ├── DEPLOYMENT.md        # for the Enclave's platform team
+│   ├── RUNBOOK.md           # on call: install, upgrade, restore, rotate, alerts, troubleshooting
+│   └── drills/              # every drill, with timings and what went wrong
 └── .github/workflows/       # app tests (both owner types), frontend build, chart tests, Terraform fmt/validate, plan check
 ```
 
@@ -116,8 +120,10 @@ Each claim gets evidence a reviewer can check. Results are from the Enclave on G
 | Nothing inside can reach the internet | `proof/prove-zero-egress.sh` tries Google, Anthropic, Hugging Face and PyPI from the bastion, from a pod under NetworkPolicies and from a pod with none. The VPC has no route out, so to show the firewall on its own it also sends a routable-but-forbidden request, which the firewall logs as **DENIED**. | All blocked; Google APIs still work; `deny-all-egress` DENIED logged |
 | The blueprint can't drift | `proof/check_terraform_plan.py` reads `terraform show -json` and fails on any Cloud NAT, `0.0.0.0/0` route, kept default route, external IP, public GKE endpoint or nodes, or public Cloud SQL IP | 91 resources, no path out; 11 rule tests in CI |
 | Gatekeeper's security still holds | `proof/suite-in-enclave.sh` runs the full suite inside the Enclave against real Cloud SQL on a throwaway database. `proof/blackbox_check.py` signs in all six users and runs the access matrix and three prompt injections against the live app and the real model. | 258 passed, 5 skipped; 21/21, nothing outside a user's tenant or clearance retrieved |
-| Upgrades don't drop requests | Upgrade and rollback between bundle versions during a k6 load test, with zero failed requests | Production milestone |
-| Data can be recovered | A timed point-in-time restore drill against the recovery-time target | Production milestone |
+| Upgrades don't drop requests | `proof/upgrade-drill.sh`: upgrade and rollback between bundles under 20 req/s (k6); `proof/ha-drill.sh`: drain a node, fail Cloud SQL over | 0 failed requests through upgrade, rollback and drain; failover recovered with no restarts |
+| Data can be recovered | `proof/restore-drill.sh`: delete a document's chunks, clone to the moment before, repair | RTO 24 min (target 60), RPO seconds |
+| Only our images run | `proof/binauthz-drill.sh`: a modified image pushed under the release's own tag | denied by Binary Authorization, and in the audit log |
+| Leaks are noticed | an egress attempt from a pod | the "egress attempt" alert fired ~3½ min later |
 
 Before any cloud spend, the same properties were proven locally:
 
@@ -132,7 +138,7 @@ Before any cloud spend, the same properties were proven locally:
 |---|---|---|
 | **Groundwork** (local, kind) | Offline-ready images, model provider interface, Keycloak for both tenants, Kubernetes manifests, NetworkPolicies, Helm chart, Terraform basics | Done |
 | **Enclave** (GCP) | Sealed VPC, firewall, private DNS, bastion, Artifact Registry, private Cloud SQL, private GKE, offline bundle, zero-egress proof, CI plan check, `DEPLOYMENT.md` | Done (VPC Service Controls needs an Organization) |
-| **Production** (GCP) | High availability, zero-downtime upgrades, backup and restore, observability with SLOs and an egress alert, Secret Manager CSI and key rotation, signed images and Binary Authorization, internal HTTPS Gateway, runbook and game day | Planned |
+| **Production** (GCP) | High availability, zero-downtime upgrades, backup and restore, observability with SLOs and an egress alert, Secret Manager CSI and key rotation, signed images and Binary Authorization, internal HTTPS Gateway, runbook and game day | Done (Keycloak HA remains, see `DEPLOYMENT.md`) |
 
 ## License
 
