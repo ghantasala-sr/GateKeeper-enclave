@@ -39,10 +39,11 @@ app.kubernetes.io/component: {{ .component }}
 {{- define "gatekeeper.image" -}}
 {{- $img := index .root.Values.image .component -}}
 {{- $tag := required "image.tag is required (the Gatekeeper release to deploy)" .root.Values.image.tag -}}
-{{- if .root.Values.image.registry -}}
-{{ .root.Values.image.registry }}/{{ $img.repository }}:{{ $tag }}
+{{- $ref := ternary (printf "%s/%s" .root.Values.image.registry $img.repository) $img.repository (ne .root.Values.image.registry "") -}}
+{{- if $img.digest -}}
+{{ $ref }}:{{ $tag }}@{{ $img.digest }}
 {{- else -}}
-{{ $img.repository }}:{{ $tag }}
+{{ $ref }}:{{ $tag }}
 {{- end -}}
 {{- end }}
 

@@ -20,6 +20,8 @@ export PATH="$PWD/tools:$PATH" KUBECONFIG="$PWD/.kubeconfig"
 project=$(gcloud config get-value project 2>/dev/null)
 reg="${REGION:-us-central1}-docker.pkg.dev/$project/gatekeeper"
 version=$(sed -n 's/^version: *//p' release.lock.yaml)
+# By digest, not tag: Binary Authorization can only check images referenced by digest (Module C6).
+backend_image="$reg/gatekeeper-backend@$(awk '$1 == "gatekeeper-backend" {print $3}' images/DIGESTS)"
 outside=(https://www.google.com https://api.anthropic.com https://huggingface.co https://pypi.org)
 routable_but_denied=http://199.36.153.4:80   # has a route; the firewall allows only 443
 fails=0
@@ -44,7 +46,7 @@ sys.exit(bad)'
 for ns in gatekeeper egress-proof; do
   if [ $ns = gatekeeper ]; then echo "== 2. from a pod in gatekeeper (NetworkPolicies)"; else echo "== 3. from a pod with no NetworkPolicies (the VPC firewall)"; fi
   kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-  kubectl run egress-test -n $ns --image="$reg/gatekeeper-backend:$version" --restart=Never --rm -i --quiet \
+  kubectl run egress-test -n $ns --image="$backend_image" --restart=Never --rm -i --quiet \
     --command -- python -c "$probe" "${outside[@]}" "$routable_but_denied" || fails=$((fails+1))
 done
 kubectl delete namespace egress-proof --wait=false >/dev/null

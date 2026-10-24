@@ -61,6 +61,12 @@ variable "node_count" {
   default     = 2
 }
 
+variable "binauthz_enforce" {
+  description = "Module C6: GKE refuses images without the release attestation."
+  type        = bool
+  default     = false
+}
+
 variable "ha" {
   description = "Module C1 drills: one node in each of three zones, and Cloud SQL with a standby. Costs more; turn off after."
   type        = bool

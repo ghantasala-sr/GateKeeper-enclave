@@ -13,6 +13,8 @@ export PATH="$PWD/tools:$PATH" KUBECONFIG="$PWD/.kubeconfig"
 kubectl config set-credentials bastion --token="$(gcloud auth print-access-token)" >/dev/null
 project=$(gcloud config get-value project 2>/dev/null)
 version=$(sed -n 's/^version: *//p' release.lock.yaml)
+# By digest, not tag: Binary Authorization can only check images referenced by digest (Module C6).
+image="${REGION:-us-central1}-docker.pkg.dev/$project/gatekeeper/gatekeeper-backend@$(awk '$1 == "gatekeeper-backend" {print $3}' images/DIGESTS)"
 what=${1:-logins}; ns=verify-$$
 case $what in logins) script=check_logins.py ;; blackbox) script=blackbox_check.py ;; *) echo "logins|blackbox"; exit 2 ;; esac
 trap 'kubectl delete namespace $ns --wait=false >/dev/null 2>&1' EXIT
@@ -24,9 +26,9 @@ kubectl create secret generic test-users -n $ns \
   --from-literal=ACME_TEST_PASSWORD="$(gcloud secrets versions access latest --secret gk-acme-test-password)" \
   --from-literal=GLOBEX_TEST_PASSWORD="$(gcloud secrets versions access latest --secret gk-globex-test-password)" >/dev/null
 kubectl run checks -n $ns --restart=Never --rm -i --quiet \
-  --image="${REGION:-us-central1}-docker.pkg.dev/$project/gatekeeper/gatekeeper-backend:$version" \
+  --image="$image" \
   --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}},
-    "containers":[{"name":"checks","image":"'"${REGION:-us-central1}-docker.pkg.dev/$project/gatekeeper/gatekeeper-backend:$version"'",
+    "containers":[{"name":"checks","image":"'"$image"'",
       "command":["sh","-c","mkdir -p /tmp/k && cp /checks/*.py /tmp/k/ && mkdir -p /tmp/keycloak && cp /checks/check_logins.py /tmp/keycloak/ && cat /etc/ssl/certs/ca-certificates.crt /checks/ca.crt > /tmp/ca.pem && cd /tmp/k && SSL_CERT_FILE=/tmp/ca.pem python '"$script"' --api https://gatekeeper.enclave.internal/api"],
       "envFrom":[{"secretRef":{"name":"test-users"}}],
       "securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},

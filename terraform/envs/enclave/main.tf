@@ -49,6 +49,9 @@ resource "google_project_service" "apis" {
     "logging.googleapis.com",
     "monitoring.googleapis.com",
     "pubsub.googleapis.com",
+    "binaryauthorization.googleapis.com",
+    "containeranalysis.googleapis.com",
+    "containerscanning.googleapis.com", # vulnerability scanning of every image pushed
   ])
   service            = each.value
   disable_on_destroy = false
@@ -130,8 +133,9 @@ module "gke" {
     "gatekeeper/gk-backend" = module.iam.backend_sa_name
     "gatekeeper/gk-setup"   = module.iam.setup_sa_name
   }
-  node_count = var.ha ? 1 : var.node_count
-  node_zones = var.ha ? ["${var.region}-a", "${var.region}-b", "${var.region}-c"] : [var.zone]
+  binauthz_enforce = var.binauthz_enforce
+  node_count       = var.ha ? 1 : var.node_count
+  node_zones       = var.ha ? ["${var.region}-a", "${var.region}-b", "${var.region}-c"] : [var.zone]
   # Nodes need private DNS (Google APIs -> restricted range) from their first boot.
   depends_on = [module.dns, module.firewall]
 }
@@ -176,4 +180,12 @@ module "tls" {
   region     = var.region
   hostnames  = var.app_hostnames
   depends_on = [google_project_service.apis]
+}
+
+module "supplychain" {
+  source           = "../../modules/supplychain"
+  project_id       = var.project_id
+  region           = var.region
+  bastion_sa_email = module.iam.bastion_sa_email
+  depends_on       = [google_project_service.apis]
 }

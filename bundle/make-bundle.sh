@@ -15,7 +15,9 @@ tool() { sed -n "s/^  $1: *\([^ #]*\).*/\1/p" "$lock"; }
 version=$(field version); platform=$(field platform); arch=${platform#linux/}
 kubectl_v=$(tool kubectl); helm_v=$(tool helm); crane_v=$(tool crane); k6_v=$(tool k6)
 out="$repo/dist/gatekeeper-bundle-$version"
-rm -rf "$out" && mkdir -p "$out"/{images,charts,tools,config}
+rm -rf "$out" && mkdir -p "$out"/{images,charts,tools,config,sbom,attestations}
+# Where the Enclave's Artifact Registry is: the signatures name images there, by digest.
+reg=${REGISTRY:-us-central1-docker.pkg.dev/enclave-gk/gatekeeper}; project=${PROJECT:-enclave-gk}
 echo "== gatekeeper-bundle-$version ($platform)"
 
 echo "-- images"
@@ -29,6 +31,22 @@ for ref in "gatekeeper-backend:$version" "gatekeeper-frontend:$version" keycloak
   echo "   ${ref}  $(du -h "$out/images/${ref%%:*}.tar" | cut -f1)"
 done
 printf '%s\n' "gatekeeper-backend $version" "gatekeeper-frontend $version" "keycloak 26.2.5" > "$out/images/TAGS"
+
+echo "-- digests, SBOMs and signatures (Module C6)"
+# The digest each image WILL have in the registry, computed from its tar before it
+# leaves this machine; the bastion checks the pushed digest matches.
+key=$(mktemp); chmod 600 "$key"; trap 'rm -f "$key"' EXIT
+gcloud secrets versions access latest --secret gk-attestor-signing-key --project "$project" > "$key"
+: > "$out/images/DIGESTS"
+while read -r name tag; do
+  digest=$(crane digest --tarball "$out/images/$name.tar")
+  echo "$name $tag $digest" >> "$out/images/DIGESTS"
+  syft -q "$out/images/$name.tar" -o spdx-json > "$out/sbom/$name.spdx.json"
+  gcloud container binauthz create-signature-payload --artifact-url="$reg/$name@$digest" > "$out/attestations/$name.payload.json"
+  openssl dgst -sha256 -sign "$key" -out "$out/attestations/$name.sig" "$out/attestations/$name.payload.json"
+  echo "   $name@$digest  sbom: $(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1]))['packages']))" "$out/sbom/$name.spdx.json") packages, signed"
+done < "$out/images/TAGS"
+rm -f "$key"
 
 echo "-- chart"
 helm package "$repo/helm/gatekeeper" -d "$out/charts" 2>/dev/null | sed 's/^/   /'

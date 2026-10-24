@@ -10,8 +10,9 @@ image:
   registry: ""          # e.g. us-central1-docker.pkg.dev/enclave-gk/gatekeeper; "" = images loaded straight onto the nodes (kind)
   tag: ""               # REQUIRED: the Gatekeeper release to deploy
   pullPolicy: IfNotPresent
-  backend: { repository: gatekeeper-backend }
-  frontend: { repository: gatekeeper-frontend }
+  # Pinned by digest when set (the Enclave's installer sets them from the bundle): image@sha256:...
+  backend: { repository: gatekeeper-backend, digest: "" }
+  frontend: { repository: gatekeeper-frontend, digest: "" }
 
 # What users type into the browser. Every login redirect, the token issuer and
 # Keycloak's own hostname are built from these, so the browser and the backend

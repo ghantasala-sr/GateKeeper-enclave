@@ -15,6 +15,11 @@ variable "workload_identities" {
   type        = map(string)
 }
 
+variable "binauthz_enforce" {
+  description = "Refuse unattested images (Binary Authorization). Turn on after attesting the running release."
+  type        = bool
+}
+
 variable "node_zones" {
   description = "Zones for the nodes (node_count in EACH)."
   type        = list(string)

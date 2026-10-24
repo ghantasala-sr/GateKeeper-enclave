@@ -22,10 +22,31 @@ sha256sum --quiet -c SHA256SUMS && echo "   all $(wc -l < SHA256SUMS) files matc
 echo "== 2. load images and chart into Artifact Registry ($reg)"
 token=$(gcloud auth print-access-token)
 echo "$token" | crane auth login "$region-docker.pkg.dev" -u oauth2accesstoken --password-stdin >/dev/null 2>&1
-while read -r name tag; do
+while read -r name tag want; do
   crane push "images/$name.tar" "$reg/$name:$tag" >/dev/null
-  echo "   $name:$tag  $(crane digest "$reg/$name:$tag")"
-done < images/TAGS
+  got=$(crane digest "$reg/$name:$tag")
+  # The registry must now hold exactly the image that was signed on the build machine.
+  [ "$got" = "$want" ] || { echo "   $name: pushed $got but the bundle signed $want" >&2; exit 1; }
+  echo "   $name:$tag  $got (matches the bundle)"
+done < images/DIGESTS
+
+echo "== 2b. attest the images (signatures made on the build machine; Binary Authorization)"
+attestor="projects/$project/attestors/gatekeeper-release"
+while read -r name tag digest; do
+  url="$reg/$name@$digest"
+  # Into a variable first: `... | grep -q` would close the pipe early, and with pipefail
+  # that reads as "not attested", so an existing attestation was re-created (a conflict).
+  # A failed check must stop the install, not read as "not attested".
+  existing=$(gcloud container binauthz attestations list --attestor="$attestor" --artifact-url="$url" --format='value(name)') \
+    || { echo "   can't check $name's attestations (permissions?)" >&2; exit 1; }
+  if [ -n "$existing" ]; then
+    echo "   $name: already attested"
+  else
+    gcloud container binauthz attestations create --artifact-url="$url" --attestor="$attestor" \
+      --signature-file="attestations/$name.sig" --public-key-id=gatekeeper-release-ecdsa >/dev/null
+    echo "   $name: attested"
+  fi
+done < images/DIGESTS
 echo "$token" | helm registry login "$region-docker.pkg.dev" -u oauth2accesstoken --password-stdin >/dev/null 2>&1
 helm push charts/gatekeeper-*.tgz "oci://$reg" 2>&1 | grep -E "^(Pushed|Digest)" | sed 's/^/   /'
 chart_version=$(basename charts/gatekeeper-*.tgz .tgz | sed 's/^gatekeeper-//')
@@ -71,8 +92,12 @@ if [ -f config/internal-ca.pem ]; then
   tls=(--set gateway.tls.preSharedCert="$cert" --set-file trustedCA=config/internal-ca.pem)
   echo "   https: certificate $cert, private CA config/internal-ca.pem"
 fi
+# Deploy by digest: a tag can be moved, a digest can't.
+d() { awk -v n="$1" '$1 == n {print $3}' images/DIGESTS; }
+pins=(--set image.backend.digest="$(d gatekeeper-backend)" --set image.frontend.digest="$(d gatekeeper-frontend)"
+      --set keycloak.image="$reg/keycloak:26.2.5@$(d keycloak)")
 helm upgrade --install $release "oci://$reg/gatekeeper" --version "$chart_version" -n $ns \
-  -f config/values-enclave.yaml --set image.tag="$version" --set database.host="$db_host" "${tls[@]}" --timeout 15m
+  -f config/values-enclave.yaml --set image.tag="$version" --set database.host="$db_host" "${tls[@]}" "${pins[@]}" --timeout 15m
 for d in backend frontend keycloak; do kubectl rollout status deployment/$release-$d -n $ns --timeout=10m; done
 helm test $release -n $ns --logs | grep -E "Phase|/health|/ready" | sed 's/^/   /'
 if grep -q "source: secretManager" config/values-enclave.yaml; then

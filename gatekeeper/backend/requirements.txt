@@ -5,7 +5,7 @@ asyncpg==0.31.0
 anthropic==1.15.0
 sentence-transformers==6.1.0
 httpx==0.28.1
-pyjwt[crypto]==2.10.1
+pyjwt[crypto]==2.15.1
 pytest==8.4.1
 authlib==1.9.1
 itsdangerous==2.2.0

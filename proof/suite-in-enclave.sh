@@ -17,6 +17,8 @@ export PATH="$PWD/tools:$PATH" KUBECONFIG="$PWD/.kubeconfig"
 project=$(gcloud config get-value project 2>/dev/null)
 reg="${REGION:-us-central1}-docker.pkg.dev/$project/gatekeeper"
 version=$(sed -n 's/^version: *//p' release.lock.yaml)
+# By digest, not tag: Binary Authorization can only check images referenced by digest (Module C6).
+backend_image="$reg/gatekeeper-backend@$(awk '$1 == "gatekeeper-backend" {print $3}' images/DIGESTS)"
 host=$(gcloud sql instances describe enclave-pg --format='value(ipAddresses[0].ipAddress)')
 ns=gatekeeper
 
@@ -40,7 +42,7 @@ spec:
       securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: suite
-          image: $reg/gatekeeper-backend:$version
+          image: $backend_image
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           command: ["sh", "-c", "python -m scripts.migrate && python -m scripts.seed && python -m app.rag.ingest && python -m pytest -q -p no:cacheprovider -p no:warnings"]
           env:

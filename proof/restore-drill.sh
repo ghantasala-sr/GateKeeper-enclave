@@ -16,6 +16,9 @@ cd "$(dirname "$0")/.."
 project=${PROJECT:-enclave-gk}; zone=${ZONE:-us-central1-a}
 version=${1:-$(sed -n 's/^version: *//p' release.lock.yaml)}
 instance=enclave-pg; clone=${RESUME_CLONE:-"enclave-pg-restore-$(date +%H%M)"}
+# By digest, not tag: Binary Authorization can only check images referenced by digest (Module C6).
+backend_image="us-central1-docker.pkg.dev/$project/gatekeeper/gatekeeper-backend@$(gcloud artifacts docker images describe \
+  "us-central1-docker.pkg.dev/$project/gatekeeper/gatekeeper-backend:$version" --project "$project" --format='value(image_summary.digest)')"
 t0=${RESUME_T0:-$(date +%s)}; stamp() { printf '[%5ss] %s\n' $(( $(date +%s) - t0 )) "$*"; }
 # RESUME_CLONE, RESUME_T0, RESUME_INCIDENT, RESUME_LAST_GOOD: pick up an interrupted drill
 # after its incident, keeping the original clock (the clone is already being created).
@@ -62,7 +65,7 @@ spec:
       securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: drill
-          image: us-central1-docker.pkg.dev/$project/gatekeeper/gatekeeper-backend:$version
+          image: $backend_image
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           command: [python, -c, 'import base64, os; exec(base64.b64decode(os.environ[\"CODE\"]))']
           env:

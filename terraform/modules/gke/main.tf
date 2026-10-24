@@ -44,6 +44,13 @@ resource "google_container_cluster" "gk" {
     channel = "CHANNEL_STANDARD"
   }
 
+  # Module C6: refuse any image without the release attestation (Binary Authorization).
+  # Switched on only once the running release's images are attested (var.binauthz_enforce):
+  # enforcing first would refuse every pod that restarts.
+  binary_authorization {
+    evaluation_mode = var.binauthz_enforce ? "PROJECT_SINGLETON_POLICY_ENFORCE" : "DISABLED"
+  }
+
   # Module C5: Secret Manager secrets mounted into pods as files (a CSI driver), so the
   # app's secrets never exist as Kubernetes Secret objects.
   secret_manager_config {
